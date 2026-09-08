@@ -1,0 +1,336 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Tokens do CRM. Todos em OKLCH, matiz neutra fria 262, acento único em 263.
+ * Referência: DESIGN.md. Fiscalizado por .cursor/rules/ux-ui-crm.mdc.
+ * Intenções hex (só aqui, convertidas): fundo #F8FAFC, texto #0F172A, primária #2563EB.
+ * #94A3B8 nunca entra em texto essencial — muted-foreground fica abaixo disso.
+ */
+
+@layer base {
+  :root {
+    --radius: 6px;
+
+    --background: oklch(0.984 0.003 262);
+    --foreground: oklch(0.208 0.04 262);
+
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.208 0.04 262);
+
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.208 0.04 262);
+
+    --muted: oklch(0.968 0.004 262);
+    --muted-foreground: oklch(0.42 0.018 262);
+
+    --subtle: oklch(0.958 0.005 262);
+
+    --secondary: oklch(0.962 0.005 262);
+    --secondary-foreground: oklch(0.245 0.014 262);
+
+    --border: oklch(0.90 0.005 262);
+    --input: oklch(0.88 0.007 262);
+
+    --primary: oklch(0.546 0.215 263);
+    --primary-foreground: oklch(0.99 0.005 263);
+    --ring: oklch(0.546 0.215 263);
+    --accent-brand: oklch(0.546 0.215 263);
+
+    --destructive: oklch(0.545 0.205 27);
+    --destructive-foreground: oklch(0.99 0.005 27);
+
+    --success: oklch(0.47 0.128 142);
+    --warning: oklch(0.55 0.14 78);
+    --chart-ink: oklch(0.32 0.02 262);
+
+    --shadow-overlay: 0 1px 2px 0 oklch(0.2 0.01 262 / 0.06), 0 8px 24px -6px oklch(0.2 0.01 262 / 0.14);
+
+    /* Funil — 7 status. Badge = ponto + rótulo + fundo tênue. Nunca fundo de coluna. */
+    --status-new-fg: oklch(0.45 0.04 257);
+    --status-new-bg: oklch(0.96 0.01 257);
+    --status-new-border: oklch(0.82 0.03 257);
+
+    --status-ready-fg: oklch(0.45 0.18 263);
+    --status-ready-bg: oklch(0.96 0.03 263);
+    --status-ready-border: oklch(0.82 0.08 263);
+
+    --status-contacted-fg: oklch(0.52 0.14 70);
+    --status-contacted-bg: oklch(0.97 0.04 70);
+    --status-contacted-border: oklch(0.86 0.08 70);
+
+    --status-qualified-fg: oklch(0.45 0.12 163);
+    --status-qualified-bg: oklch(0.96 0.03 163);
+    --status-qualified-border: oklch(0.84 0.07 163);
+
+    --status-negotiation-fg: oklch(0.48 0.18 293);
+    --status-negotiation-bg: oklch(0.96 0.04 293);
+    --status-negotiation-border: oklch(0.84 0.1 293);
+
+    --status-customer-fg: oklch(0.99 0.01 149);
+    --status-customer-bg: oklch(0.53 0.16 149);
+    --status-customer-border: oklch(0.48 0.16 149);
+
+    --status-lost-fg: oklch(0.5 0.19 27);
+    --status-lost-bg: oklch(0.96 0.03 27);
+    --status-lost-border: oklch(0.86 0.07 27);
+
+    --result-opened-fg: oklch(0.45 0.18 263);
+    --result-opened-bg: oklch(1 0 0);
+    --result-opened-border: oklch(0.546 0.215 263);
+
+    --result-sent-fg: oklch(0.45 0.18 263);
+    --result-sent-bg: oklch(0.96 0.03 263);
+    --result-sent-border: oklch(0.82 0.08 263);
+
+    --result-responded-fg: oklch(0.45 0.12 162);
+    --result-responded-bg: oklch(0.96 0.04 162);
+    --result-responded-border: oklch(0.84 0.08 162);
+
+    --result-no-response-fg: oklch(0.45 0.04 257);
+    --result-no-response-bg: oklch(0.96 0.01 257);
+    --result-no-response-border: oklch(0.82 0.03 257);
+
+    --result-callback-fg: oklch(0.52 0.14 70);
+    --result-callback-bg: oklch(0.97 0.04 70);
+    --result-callback-border: oklch(0.86 0.08 70);
+
+    --result-no-interest-fg: oklch(0.45 0.04 257);
+    --result-no-interest-bg: oklch(0.96 0.01 257);
+    --result-no-interest-border: oklch(0.82 0.03 257);
+
+    --result-invalid-fg: oklch(0.5 0.18 25);
+    --result-invalid-bg: oklch(0.96 0.04 25);
+    --result-invalid-border: oklch(0.86 0.08 25);
+
+    --result-other-fg: oklch(0.45 0.04 257);
+    --result-other-bg: oklch(0.96 0.01 257);
+    --result-other-border: oklch(0.82 0.03 257);
+
+    /* Avatar de registro. Paleta própria — nunca reutiliza --status-* nem --result-*. */
+    --identity-0: oklch(0.52 0.08 18);
+    --identity-1: oklch(0.50 0.07 95);
+    --identity-2: oklch(0.50 0.07 195);
+    --identity-3: oklch(0.50 0.08 225);
+    --identity-4: oklch(0.52 0.07 320);
+    --identity-5: oklch(0.52 0.08 355);
+    --identity-fg: oklch(0.99 0.005 262);
+
+    /* Atendimento — paleta própria, nunca reutiliza --status-* do funil. */
+    --conversation-open-fg: oklch(0.45 0.1 210);
+    --conversation-open-bg: oklch(0.96 0.02 210);
+    --conversation-open-border: oklch(0.84 0.05 210);
+
+    --conversation-waiting-fg: oklch(0.48 0.06 85);
+    --conversation-waiting-bg: oklch(0.97 0.02 85);
+    --conversation-waiting-border: oklch(0.86 0.04 85);
+
+    --conversation-resolved-fg: oklch(0.42 0.04 250);
+    --conversation-resolved-bg: oklch(0.96 0.01 250);
+    --conversation-resolved-border: oklch(0.84 0.03 250);
+  }
+
+  .dark {
+    --background: oklch(0.165 0.012 262);
+    --foreground: oklch(0.955 0.004 262);
+
+    --card: oklch(0.198 0.012 262);
+    --card-foreground: oklch(0.955 0.004 262);
+
+    --popover: oklch(0.222 0.013 262);
+    --popover-foreground: oklch(0.955 0.004 262);
+
+    --muted: oklch(0.232 0.012 262);
+    --muted-foreground: oklch(0.78 0.014 262);
+
+    --subtle: oklch(0.215 0.012 262);
+
+    --secondary: oklch(0.245 0.013 262);
+    --secondary-foreground: oklch(0.94 0.005 262);
+
+    --border: oklch(0.30 0.010 262);
+    --input: oklch(0.32 0.011 262);
+
+    --primary: oklch(0.64 0.17 263);
+    --primary-foreground: oklch(0.16 0.02 263);
+    --ring: oklch(0.64 0.17 263);
+    --accent-brand: oklch(0.64 0.17 263);
+
+    --destructive: oklch(0.628 0.192 25);
+    --destructive-foreground: oklch(0.14 0.02 25);
+
+    --success: oklch(0.755 0.148 142);
+    --warning: oklch(0.83 0.126 78);
+    --chart-ink: oklch(0.88 0.01 262);
+
+    --shadow-overlay: 0 1px 2px 0 oklch(0 0 0 / 0.4), 0 12px 32px -8px oklch(0 0 0 / 0.55);
+
+    --status-new-fg: oklch(0.78 0.03 257);
+    --status-new-bg: oklch(0.262 0.012 257);
+    --status-new-border: oklch(0.38 0.02 257);
+
+    --status-ready-fg: oklch(0.78 0.12 263);
+    --status-ready-bg: oklch(0.26 0.05 263);
+    --status-ready-border: oklch(0.4 0.09 263);
+
+    --status-contacted-fg: oklch(0.84 0.12 70);
+    --status-contacted-bg: oklch(0.28 0.05 70);
+    --status-contacted-border: oklch(0.42 0.09 70);
+
+    --status-qualified-fg: oklch(0.8 0.11 163);
+    --status-qualified-bg: oklch(0.26 0.05 163);
+    --status-qualified-border: oklch(0.4 0.08 163);
+
+    --status-negotiation-fg: oklch(0.82 0.14 293);
+    --status-negotiation-bg: oklch(0.27 0.06 293);
+    --status-negotiation-border: oklch(0.42 0.1 293);
+
+    --status-customer-fg: oklch(0.16 0.03 149);
+    --status-customer-bg: oklch(0.72 0.16 149);
+    --status-customer-border: oklch(0.78 0.16 149);
+
+    --status-lost-fg: oklch(0.8 0.14 27);
+    --status-lost-bg: oklch(0.28 0.06 27);
+    --status-lost-border: oklch(0.42 0.1 27);
+
+    --result-opened-fg: oklch(0.78 0.12 263);
+    --result-opened-bg: oklch(0.198 0.012 262);
+    --result-opened-border: oklch(0.64 0.17 263);
+
+    --result-sent-fg: oklch(0.78 0.12 263);
+    --result-sent-bg: oklch(0.26 0.05 263);
+    --result-sent-border: oklch(0.4 0.09 263);
+
+    --result-responded-fg: oklch(0.8 0.11 162);
+    --result-responded-bg: oklch(0.26 0.05 162);
+    --result-responded-border: oklch(0.4 0.08 162);
+
+    --result-no-response-fg: oklch(0.78 0.03 257);
+    --result-no-response-bg: oklch(0.262 0.012 257);
+    --result-no-response-border: oklch(0.38 0.02 257);
+
+    --result-callback-fg: oklch(0.84 0.12 70);
+    --result-callback-bg: oklch(0.28 0.05 70);
+    --result-callback-border: oklch(0.42 0.09 70);
+
+    --result-no-interest-fg: oklch(0.78 0.03 257);
+    --result-no-interest-bg: oklch(0.262 0.012 257);
+    --result-no-interest-border: oklch(0.38 0.02 257);
+
+    --result-invalid-fg: oklch(0.82 0.14 25);
+    --result-invalid-bg: oklch(0.28 0.06 25);
+    --result-invalid-border: oklch(0.42 0.1 25);
+
+    --result-other-fg: oklch(0.78 0.03 257);
+    --result-other-bg: oklch(0.262 0.012 257);
+    --result-other-border: oklch(0.38 0.02 257);
+
+    --identity-0: oklch(0.58 0.08 18);
+    --identity-1: oklch(0.56 0.07 95);
+    --identity-2: oklch(0.56 0.07 195);
+    --identity-3: oklch(0.56 0.08 225);
+    --identity-4: oklch(0.58 0.07 320);
+    --identity-5: oklch(0.58 0.08 355);
+    --identity-fg: oklch(0.99 0.005 262);
+
+    --conversation-open-fg: oklch(0.8 0.08 210);
+    --conversation-open-bg: oklch(0.26 0.04 210);
+    --conversation-open-border: oklch(0.4 0.06 210);
+
+    --conversation-waiting-fg: oklch(0.84 0.08 85);
+    --conversation-waiting-bg: oklch(0.28 0.04 85);
+    --conversation-waiting-border: oklch(0.42 0.06 85);
+
+    --conversation-resolved-fg: oklch(0.78 0.03 250);
+    --conversation-resolved-bg: oklch(0.26 0.02 250);
+    --conversation-resolved-border: oklch(0.4 0.03 250);
+  }
+
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-size: 0.8125rem; /* 13px, corpo do sistema */
+    line-height: 1.125rem;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Foco visível em todo alvo interativo. */
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 1px var(--ring);
+  }
+
+  /* Respeita usuário que pediu menos movimento. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  /*
+   * Dado técnico: CNPJ, telefone, CEP, data, valor, código, contador, KPI.
+   * Obrigatório pela regra ux-ui-crm §1.
+   */
+  .numeric {
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Rótulo de cabeçalho de tabela. */
+  .col-label {
+    font-size: 0.6875rem;
+    line-height: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  .press {
+    transition: transform 100ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .press:active {
+    transform: scale(0.98);
+  }
+
+  /* Barra de rolagem discreta em painel denso. */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--input) transparent;
+  }
+}

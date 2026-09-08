@@ -1,0 +1,24 @@
+[Unit]
+Description=CRM de prospeccao (Next.js, porta 3001)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=crm
+Group=crm
+WorkingDirectory=/opt/disparo-de-msg
+Environment=NODE_ENV=production
+Environment=PATH=/usr/bin:/usr/local/bin
+EnvironmentFile=/opt/disparo-de-msg/.env
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+# Next escuta só em 127.0.0.1:3001 (script start do package.json).
+# Nginx faz o proxy público. Não abra a 3001 no firewall.
+
+[Install]
+WantedBy=multi-user.target

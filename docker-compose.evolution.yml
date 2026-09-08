@@ -1,0 +1,72 @@
+# Evolution API (WhatsApp Web / QR) — opcional, isolada do Postgres/Redis do CRM.
+# Pode reutilizar a stack do Chamado em localhost:8080 se já estiver no ar.
+# Pin: evoapicloud/evolution-api:v2.3.7 (v2.1.1 não gera QR).
+
+services:
+  evolution-postgres:
+    image: postgres:15-alpine
+    container_name: crm_evolution_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: evolution
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${EVOLUTION_DB_PASSWORD:-evolution_change_me}
+    volumes:
+      - crm_evolution_pg_data:/var/lib/postgresql/data
+    networks:
+      - crm_evolution_net
+
+  evolution-redis:
+    image: redis:7-alpine
+    container_name: crm_evolution_redis
+    restart: unless-stopped
+    volumes:
+      - crm_evolution_redis_data:/data
+    networks:
+      - crm_evolution_net
+
+  evolution-api:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: crm_evolution_api
+    restart: unless-stopped
+    depends_on:
+      - evolution-postgres
+      - evolution-redis
+    ports:
+      - '127.0.0.1:8080:8080'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    environment:
+      SERVER_URL: ${EVOLUTION_SERVER_URL:-http://localhost:8080}
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-change-me-evolution-key}
+      DATABASE_ENABLED: 'true'
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${EVOLUTION_DB_PASSWORD:-evolution_change_me}@evolution-postgres:5432/evolution?schema=evolution_api
+      DATABASE_CONNECTION_CLIENT_NAME: crm_evolution
+      DATABASE_SAVE_DATA_INSTANCE: 'true'
+      DATABASE_SAVE_DATA_NEW_MESSAGE: 'true'
+      DATABASE_SAVE_MESSAGE_UPDATE: 'true'
+      DATABASE_SAVE_DATA_CONTACTS: 'true'
+      DATABASE_SAVE_DATA_CHATS: 'true'
+      DATABASE_SAVE_DATA_HISTORIC: 'false'
+      CACHE_REDIS_ENABLED: 'true'
+      CACHE_REDIS_URI: redis://evolution-redis:6379/1
+      CACHE_REDIS_PREFIX_KEY: crm_evolution
+      WEBHOOK_GLOBAL_ENABLED: 'false'
+      QRCODE_LIMIT: '30'
+      CONFIG_SESSION_PHONE_CLIENT: Chrome
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      NODE_OPTIONS: --dns-result-order=ipv4first --network-family-autoselection-attempt-timeout=5000
+    volumes:
+      - crm_evolution_instances:/evolution/instances
+    networks:
+      - crm_evolution_net
+
+volumes:
+  crm_evolution_pg_data:
+  crm_evolution_redis_data:
+  crm_evolution_instances:
+
+networks:
+  crm_evolution_net:
+    driver: bridge

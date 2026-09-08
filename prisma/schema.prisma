@@ -1,0 +1,737 @@
+// CRM de prospecção — schema oficial.
+// Comportamento documentado em DOCUMENTACAO-SISTEMA.md.
+// Enums espelhados com rótulo/cor/ordem em src/constants/.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  MANAGER
+  USER
+}
+
+enum LeadStatus {
+  NEW
+  READY_TO_CONTACT
+  CONTACTED
+  QUALIFIED
+  NEGOTIATION
+  CUSTOMER
+  LOST
+}
+
+enum InteractionType {
+  WHATSAPP
+  PHONE
+  EMAIL
+  NOTE
+  OTHER
+}
+
+enum InteractionResult {
+  OPENED
+  SENT
+  RESPONDED
+  NO_RESPONSE
+  NO_INTEREST
+  INVALID_NUMBER
+  CALLBACK
+  OTHER
+}
+
+enum FollowUpStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+  OVERDUE
+}
+
+enum ImportJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ImportIssueSeverity {
+  /// A linha foi rejeitada e o lead não entrou.
+  ERROR
+  /// O lead entrou, mas um campo foi descartado (ex.: e-mail inválido).
+  WARNING
+}
+
+enum WhatsAppProvider {
+  LEGACY_MANUAL
+  CHATWOOT
+  MOCK
+  EVOLUTION
+  BAILEYS
+}
+
+enum WhatsAppAccountStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+}
+
+enum WhatsAppSessionStatus {
+  DISCONNECTED
+  CONNECTING
+  QR_CODE
+  CONNECTED
+  FAILED
+}
+
+enum CampaignStatus {
+  DRAFT
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum CampaignRecipientStatus {
+  PENDING
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+  SKIPPED
+  OPTED_OUT
+  RESPONDED
+}
+
+enum CampaignRoutingMode {
+  MANUAL
+  CURRENT_OWNER
+  RULES
+  ROUND_ROBIN
+}
+
+enum ConversationStatus {
+  OPEN
+  WAITING
+  RESOLVED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageKind {
+  TEXT
+  TEMPLATE
+  SYSTEM
+  IMAGE
+  VIDEO
+  AUDIO
+}
+
+enum MediaKind {
+  IMAGE
+  VIDEO
+  AUDIO
+}
+
+enum MessageDeliveryStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum AssignmentReason {
+  ROUTING_RULE
+  ROUND_ROBIN
+  CURRENT_OWNER
+  MANUAL
+  TAKE
+  TRANSFER
+  UNASSIGNED
+}
+
+enum OptOutSource {
+  CAMPAIGN
+  INBOUND
+  MANUAL
+  LEAD
+}
+
+// ---------------------------------------------------------------------------
+// Usuários e auditoria
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         Role      @default(USER)
+  active       Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  leads         Lead[]          @relation("LeadResponsavel")
+  interactions  Interaction[]
+  followUps     FollowUp[]      @relation("FollowUpResponsavel")
+  createdFollow FollowUp[]      @relation("FollowUpCriador")
+  templates     MessageTemplate[]
+  auditLogs     AuditLog[]
+  importJobs    ImportJob[]
+  notifications Notification[]
+  campaignsCreated Campaign[] @relation("CampaignCreator")
+  conversationsAssigned Conversation[] @relation("ConversationAssignee")
+  conversationAssignments ConversationAssignment[]
+  routingRules RoutingRule[]
+  conversationRestrictions ConversationUserRestriction[]
+  mediaAssets              MediaAsset[]
+
+  @@index([role])
+  @@index([email])
+  @@map("users")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String // ex.: lead.update, lead.status.change, import.run
+  entity     String // ex.: Lead, ImportJob
+  entityId   String?
+  changes    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Lead
+// ---------------------------------------------------------------------------
+
+model Lead {
+  id            String     @id @default(cuid())
+
+  // Identificação
+  cnpj          String     @unique
+  razaoSocial   String
+  nomeFantasia  String?
+
+  // Contato
+  telefone      String?
+  whatsapp      String?
+  phones        String[]   @default([])
+  email         String?
+
+  // Localização
+  estado        String?
+  cidade        String?
+  logradouro    String?
+  numero        String?
+  complemento   String?
+  bairro        String?
+  cep           String?
+  ibge          String?
+
+  // Classificação
+  segmento      String?
+  porte         String?
+  origem        String?
+
+  // Dados cadastrais da Receita
+  cnaePrincipalCodigo    String?
+  cnaePrincipalDescricao String?
+  cnaeSecundarios        String[] @default([])
+  situacaoCadastral      String?
+  naturezaJuridica       String?
+  dataAbertura           DateTime?
+  capitalSocial          Decimal? @db.Decimal(18, 2)
+  socios                 String[] @default([])
+  optanteSimples         Boolean  @default(false)
+  optanteMei             Boolean  @default(false)
+
+  // Operação
+  status        LeadStatus @default(NEW)
+  score         Int        @default(0)
+  observacoes   String?
+  responsavelId String?
+  lastContactAt DateTime?
+  nextContactAt DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // Colunas de origem não mapeadas
+  rawImport     Json?
+
+  responsavel  User?         @relation("LeadResponsavel", fields: [responsavelId], references: [id], onDelete: SetNull)
+  interactions Interaction[]
+  followUps    FollowUp[]
+  tags         LeadTag[]
+  campaignRecipients CampaignRecipient[]
+  conversations Conversation[]
+  optOuts      OptOut[]
+
+  @@index([status])
+  @@index([estado])
+  @@index([cidade])
+  @@index([responsavelId])
+  @@index([nextContactAt])
+  @@index([lastContactAt])
+  @@index([createdAt])
+  @@index([whatsapp])
+  @@index([situacaoCadastral])
+  @@index([status, nextContactAt])
+  @@index([responsavelId, nextContactAt])
+  @@index([estado, status])
+  @@index([createdAt, status])
+  @@map("leads")
+}
+
+// ---------------------------------------------------------------------------
+// Interação e follow-up
+// ---------------------------------------------------------------------------
+
+model Interaction {
+  id         String             @id @default(cuid())
+  leadId     String
+  userId     String
+  type       InteractionType
+  result     InteractionResult?
+  content    String?
+  templateId String?
+  occurredAt DateTime           @default(now())
+  createdAt  DateTime           @default(now())
+
+  lead     Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template MessageTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([leadId, occurredAt])
+  @@index([userId, occurredAt])
+  @@index([type])
+  @@index([result])
+  @@index([occurredAt])
+  @@map("interactions")
+}
+
+model FollowUp {
+  id            String         @id @default(cuid())
+  leadId        String
+  responsavelId String
+  criadoPorId   String?
+  scheduledFor  DateTime
+  note          String?
+  status        FollowUpStatus @default(PENDING)
+  completedAt   DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  lead        Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  responsavel User  @relation("FollowUpResponsavel", fields: [responsavelId], references: [id], onDelete: Cascade)
+  criadoPor   User? @relation("FollowUpCriador", fields: [criadoPorId], references: [id], onDelete: SetNull)
+
+  @@index([leadId])
+  @@index([status, scheduledFor])
+  @@index([responsavelId, status, scheduledFor])
+  @@index([scheduledFor])
+  @@map("follow_ups")
+}
+
+// ---------------------------------------------------------------------------
+// Templates e tags
+// ---------------------------------------------------------------------------
+
+model MediaAsset {
+  id          String    @id @default(cuid())
+  kind        MediaKind
+  mimeType    String
+  fileName    String
+  sizeBytes   Int
+  storageKey  String    @unique
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  createdBy User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  templates MessageTemplate[]
+  messages  Message[]
+
+  @@index([createdById])
+  @@map("media_assets")
+}
+
+model MessageTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  channel   InteractionType @default(WHATSAPP)
+  subject   String?
+  body      String
+  variables String[] @default([])
+  active    Boolean  @default(true)
+  mediaId   String?
+  createdById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdBy         User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  media             MediaAsset?   @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+  interactions      Interaction[]
+  campaigns         Campaign[]    @relation("CampaignTemplate")
+  followUpCampaigns Campaign[]    @relation("CampaignFollowUpTemplate")
+  messages          Message[]
+
+  @@unique([name])
+  @@index([active, channel])
+  @@index([mediaId])
+  @@map("message_templates")
+}
+
+model Tag {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  color     String // token de cor, não hex cru na UI
+  createdAt DateTime  @default(now())
+
+  leads LeadTag[]
+
+  @@map("tags")
+}
+
+model LeadTag {
+  leadId    String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([leadId, tagId])
+  @@index([tagId])
+  @@map("lead_tags")
+}
+
+// ---------------------------------------------------------------------------
+// Importação
+// ---------------------------------------------------------------------------
+
+model ImportJob {
+  id             String          @id @default(cuid())
+  fileName       String
+  source         String          @default("upload") // upload | cli
+  status         ImportJobStatus @default(PENDING)
+  onlyActive     Boolean         @default(true)
+  columnMapping  Json?
+  totalRows      Int             @default(0)
+  processedRows  Int             @default(0)
+  insertedRows   Int             @default(0)
+  skippedRows    Int             @default(0)
+  failedRows     Int             @default(0)
+  duplicateRows  Int             @default(0)
+  inactiveRows   Int             @default(0)
+  /// Leads que entraram, mas com algum campo descartado (e-mail ou telefone inválido).
+  warningRows    Int             @default(0)
+  offset         Int             @default(0)
+  errorMessage   String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdById    String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  createdBy User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  errors    ImportError[]
+
+  @@index([status, createdAt])
+  @@index([createdById])
+  @@map("import_jobs")
+}
+
+model ImportError {
+  id        String              @id @default(cuid())
+  jobId     String
+  rowNumber Int
+  field     String?
+  reason    String
+  severity  ImportIssueSeverity @default(ERROR)
+  rawRow    Json?
+  createdAt DateTime            @default(now())
+
+  job ImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, severity, rowNumber])
+  @@map("import_errors")
+}
+
+// ---------------------------------------------------------------------------
+// Notificações
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String?
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp, campanhas, inbox (v0.13.0)
+// ---------------------------------------------------------------------------
+
+model WhatsAppAccount {
+  id                    String                 @id @default(cuid())
+  name                  String
+  phone                 String?
+  provider              WhatsAppProvider
+  status                WhatsAppAccountStatus  @default(INACTIVE)
+  sessionStatus         WhatsAppSessionStatus  @default(DISCONNECTED)
+  lastHeartbeatAt       DateTime?
+  lastConnectedAt       DateTime?
+  /// Inbox Chatwoot ou identificador externo legado.
+  providerInboxId       String?
+  /// Nome da instância na Evolution API (WhatsApp Web / QR).
+  providerInstanceName  String?
+  /// Data URL (base64) do QR enquanto sessionStatus = QR_CODE.
+  qrCode                String?                @db.Text
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  campaigns     Campaign[]
+  conversations Conversation[]
+
+  @@unique([providerInstanceName])
+  @@index([provider, status])
+  @@index([sessionStatus])
+  @@map("whatsapp_accounts")
+}
+
+model Campaign {
+  id                    String               @id @default(cuid())
+  name                  String
+  status                CampaignStatus       @default(DRAFT)
+  wizardStep            Int                  @default(1)
+  audienceFilter        Json
+  excludeOptOut         Boolean              @default(true)
+  recipientLimit        Int?
+  routingMode           CampaignRoutingMode  @default(MANUAL)
+  templateId            String?
+  followUpTemplateId    String?
+  followUpDelayHours    Int                  @default(2)
+  followUpStartedAt     DateTime?
+  whatsappAccountId     String?
+  createdById           String
+  totalCount            Int                  @default(0)
+  withWhatsappCount     Int                  @default(0)
+  withoutWhatsappCount  Int                  @default(0)
+  optOutCount           Int                  @default(0)
+  startedAt             DateTime?
+  pausedAt              DateTime?
+  completedAt           DateTime?
+  cancelledAt           DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  template         MessageTemplate?     @relation("CampaignTemplate", fields: [templateId], references: [id], onDelete: SetNull)
+  followUpTemplate MessageTemplate?     @relation("CampaignFollowUpTemplate", fields: [followUpTemplateId], references: [id], onDelete: SetNull)
+  whatsappAccount  WhatsAppAccount?     @relation(fields: [whatsappAccountId], references: [id], onDelete: SetNull)
+  createdBy        User                 @relation("CampaignCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  recipients       CampaignRecipient[]
+  conversations    Conversation[]
+  messages         Message[]
+
+  @@index([status, createdAt])
+  @@index([createdById])
+  @@index([whatsappAccountId])
+  @@map("campaigns")
+}
+
+model CampaignRecipient {
+  id                      String                   @id @default(cuid())
+  campaignId              String
+  leadId                  String
+  phone                   String
+  status                  CampaignRecipientStatus  @default(PENDING)
+  error                   String?
+  processedAt             DateTime?
+  queuedAt                DateTime?
+  idempotencyKey          String                   @unique
+  followUpStatus          CampaignRecipientStatus?
+  followUpError           String?
+  followUpProcessedAt     DateTime?
+  followUpQueuedAt        DateTime?
+  followUpIdempotencyKey  String?                  @unique
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  lead     Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, leadId])
+  @@index([campaignId, status])
+  @@index([campaignId, followUpStatus])
+  @@index([leadId])
+  @@map("campaign_recipients")
+}
+
+model Conversation {
+  id                 String              @id @default(cuid())
+  leadId             String?
+  whatsappAccountId  String
+  campaignId         String?
+  phone              String
+  status             ConversationStatus  @default(WAITING)
+  assignedUserId     String?
+  lastMessageAt      DateTime?
+  lastMessagePreview String?
+  unreadCount        Int                 @default(0)
+  firstInboundAt     DateTime?
+  firstResponseAt    DateTime?
+  assignedAt         DateTime?
+  resolvedAt         DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  lead            Lead?                         @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  whatsappAccount WhatsAppAccount               @relation(fields: [whatsappAccountId], references: [id], onDelete: Restrict)
+  campaign        Campaign?                     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  assignedUser    User?                         @relation("ConversationAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  messages        Message[]
+  assignments     ConversationAssignment[]
+  restrictions    ConversationUserRestriction[]
+
+  @@index([assignedUserId, status, lastMessageAt])
+  @@index([leadId])
+  @@index([whatsappAccountId])
+  @@index([status, lastMessageAt])
+  @@index([unreadCount])
+  @@map("conversations")
+}
+
+model Message {
+  id                 String                 @id @default(cuid())
+  conversationId     String
+  campaignId         String?
+  templateId         String?
+  mediaId            String?
+  direction          MessageDirection
+  kind               MessageKind            @default(TEXT)
+  body               String
+  status             MessageDeliveryStatus  @default(PENDING)
+  providerMessageId  String?                @unique
+  sentAt             DateTime?
+  createdAt          DateTime               @default(now())
+
+  conversation Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  campaign     Campaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  template     MessageTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  media        MediaAsset?      @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@index([campaignId])
+  @@index([status])
+  @@index([mediaId])
+  @@map("messages")
+}
+
+model ConversationAssignment {
+  id              String           @id @default(cuid())
+  conversationId  String
+  fromUserId      String?
+  toUserId        String?
+  reason          AssignmentReason
+  note            String?
+  createdById     String?
+  createdAt       DateTime         @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@index([toUserId, createdAt])
+  @@map("conversation_assignments")
+}
+
+model ConversationUserRestriction {
+  id              String   @id @default(cuid())
+  conversationId  String
+  userId          String
+  reason          String?
+  createdAt       DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@map("conversation_user_restrictions")
+}
+
+model RoutingRule {
+  id        String   @id @default(cuid())
+  field     String
+  operator  String
+  value     String
+  userId    String
+  priority  Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([active, priority])
+  @@index([userId])
+  @@map("routing_rules")
+}
+
+model RoutingRoundRobinState {
+  id         String   @id @default(cuid())
+  key        String   @unique
+  lastUserId String?
+  cursor     Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  @@map("routing_round_robin_states")
+}
+
+model OptOut {
+  id        String       @id @default(cuid())
+  leadId    String
+  phone     String
+  source    OptOutSource
+  reason    String?
+  createdAt DateTime     @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId, phone])
+  @@index([phone])
+  @@map("opt_outs")
+}
