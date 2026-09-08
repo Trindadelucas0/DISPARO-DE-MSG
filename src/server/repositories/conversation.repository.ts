@@ -28,6 +28,7 @@ export const CONVERSATION_LIST_SELECT = {
       cidade: true,
       estado: true,
       status: true,
+      whatsapp: true,
       responsavelId: true,
       nextContactAt: true,
       responsavel: { select: { id: true, name: true } },
@@ -98,6 +99,32 @@ export async function findOpenConversationForLeadAccount(
       leadId,
       whatsappAccountId,
       status: { not: 'RESOLVED' },
+    },
+    orderBy: { updatedAt: 'desc' },
+  });
+}
+
+export async function findOpenConversationForCampaign(
+  leadId: string,
+  whatsappAccountId: string,
+  campaignId: string,
+) {
+  const sameCampaign = await prisma.conversation.findFirst({
+    where: {
+      leadId,
+      whatsappAccountId,
+      status: { not: 'RESOLVED' },
+      campaignId,
+    },
+    orderBy: { updatedAt: 'desc' },
+  });
+  if (sameCampaign) return sameCampaign;
+  return prisma.conversation.findFirst({
+    where: {
+      leadId,
+      whatsappAccountId,
+      status: { not: 'RESOLVED' },
+      campaignId: null,
     },
     orderBy: { updatedAt: 'desc' },
   });

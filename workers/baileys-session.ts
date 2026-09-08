@@ -15,6 +15,7 @@ import {
   inboundBodyFromBaileysMessage,
   inboundMediaKindFromBaileysMessage,
   inboundMediaMimeFromBaileysMessage,
+  inboundStoredPhone,
   normalizeInboundPhone,
   resolveInboundSender,
   shouldAcceptInbound,
@@ -567,8 +568,11 @@ async function startSocket(accountId: string) {
         }
 
         const from = resolveInboundSender(jid, msg.key?.remoteJidAlt);
-        if (from.length < 10) {
-          console.log('[baileys] inbound ignorado (jid sem telefone)', { accountId });
+        if (!inboundStoredPhone(from)) {
+          console.log('[baileys] inbound ignorado (telefone inválido)', {
+            accountId,
+            fromLength: from.length,
+          });
           continue;
         }
 

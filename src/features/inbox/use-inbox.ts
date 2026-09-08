@@ -87,8 +87,24 @@ export function useInboxActions(conversationId: string | null) {
     onSuccess: () => invalidateInbox(queryClient, id),
   });
   const transfer = useMutation({
-    mutationFn: (body: { toUserId: string; note?: string }) =>
-      apiPost(`/api/conversations/${id}/transfer`, body),
+    mutationFn: (body: { toUserId: string; note?: string }) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7573/ingest/168a1e45-0a27-4a12-9ec9-dabfa1ec792b', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'da6cd6' },
+        body: JSON.stringify({
+          sessionId: 'da6cd6',
+          runId: 'post-fix',
+          hypothesisId: 'D',
+          location: 'use-inbox.ts:transfer',
+          message: 'client transfer mutate',
+          data: { conversationId: id, toUserId: body.toUserId, idEmpty: !id },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+      return apiPost(`/api/conversations/${id}/transfer`, body);
+    },
     onSuccess: () => invalidateInbox(queryClient, id),
   });
   const resolve = useMutation({
@@ -105,8 +121,19 @@ export function useInboxActions(conversationId: string | null) {
   });
   const attachContact = useMutation({
     mutationFn: (body: { name: string; whatsapp?: string; cnpj?: string }) =>
-      apiPost(`/api/conversations/${id}/contact`, body),
-    onSuccess: () => {
+      apiPost<SerializedConversation>(`/api/conversations/${id}/contact`, body),
+    onSuccess: (conversation) => {
+      queryClient.setQueryData(inboxKeys.detail(id), conversation);
+      queryClient.setQueriesData<{ total: number; rows: SerializedConversation[] }>(
+        { queryKey: ['conversations', 'list'] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            rows: old.rows.map((row) => (row.id === conversation.id ? conversation : row)),
+          };
+        },
+      );
       invalidateInbox(queryClient, id);
       invalidateClientTags(queryClient, ['leads', 'dashboard', 'contacts', 'reports']);
     },

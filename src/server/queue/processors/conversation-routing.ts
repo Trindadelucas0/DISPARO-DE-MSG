@@ -1,9 +1,11 @@
 import type { CampaignRoutingMode } from '@prisma/client';
 
+import { shouldAssignLeadOwner } from '@/constants/conversation';
 import { MUTATION_TAGS, notifyChange } from '@/lib/events';
 import { resolveAssignee } from '@/lib/routing';
 import { prisma } from '@/lib/db';
 import type { ConversationRoutingJob } from '@/server/queue/names';
+import { connectLeadOwner } from '@/server/repositories/lead.repository';
 import { recordAudit } from '@/server/services/audit.service';
 
 async function loadRoundRobinUsers(): Promise<string[]> {
@@ -75,6 +77,12 @@ export async function processConversationRoutingJob(
 
   if (!result.userId) return 'skipped';
 
+  const leadId = conversation.leadId;
+  const syncLead = shouldAssignLeadOwner({
+    leadId,
+    currentResponsavelId: conversation.lead?.responsavelId,
+    toUserId: result.userId,
+  });
   await prisma.$transaction([
     prisma.conversation.update({
       where: { id: conversation.id },
@@ -92,6 +100,7 @@ export async function processConversationRoutingJob(
         reason: result.reason,
       },
     }),
+    ...(syncLead && leadId ? [connectLeadOwner(leadId, result.userId)] : []),
   ]);
 
   await recordAudit({
@@ -101,10 +110,24 @@ export async function processConversationRoutingJob(
     entityId: conversation.id,
     changes: { toUserId: result.userId, reason: result.reason },
   });
+  if (syncLead && leadId) {
+    await recordAudit({
+      userId: null,
+      action: 'lead.reassign.from_conversation',
+      entity: 'Lead',
+      entityId: leadId,
+      changes: {
+        responsavelId: { from: conversation.lead?.responsavelId ?? null, to: result.userId },
+      },
+    });
+  }
 
   await notifyChange({
     type: 'conversation.route',
-    tags: [...MUTATION_TAGS.conversation],
+    tags:
+      syncLead && leadId
+        ? [...MUTATION_TAGS.conversation, ...MUTATION_TAGS.lead(leadId)]
+        : [...MUTATION_TAGS.conversation],
     entityId: conversation.id,
   });
 

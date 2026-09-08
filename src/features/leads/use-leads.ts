@@ -7,7 +7,7 @@ import type { LeadFilters, LeadUpdateInput } from '@/features/leads/schema';
 import { leadsApiUrl } from '@/features/leads/query';
 import { apiGet, apiPatch, apiPost } from '@/lib/api-client';
 import type { LeadFacets, LeadListResult, SerializedLeadDetail } from '@/server/services/lead.service';
-import type { BulkLeadResult } from '@/features/leads/bulk-schema';
+import type { BulkLeadInput, BulkLeadResult } from '@/features/leads/bulk-schema';
 
 /**
  * Acesso a dados das telas de lead. Componente não chama `fetch` direto e
@@ -64,7 +64,7 @@ export function useBulkUpdateLeads() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: { ids: string[]; status?: string; responsavelId?: string | null }) =>
+    mutationFn: (input: BulkLeadInput) =>
       apiPost<BulkLeadResult>('/api/leads/bulk', input),
     onSuccess: () => {
       invalidateClientTags(queryClient, ['leads', 'dashboard', 'contacts', 'reports']);

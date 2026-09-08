@@ -3,17 +3,25 @@
 Fonte oficial de comportamento. Se a tela e este documento divergirem, um dos dois está errado
 e a divergência precisa ser resolvida na mesma entrega.
 
-**Layout do repositório.** Este git **é** a aplicação (Next.js, Prisma, Compose, `.env.example`
-na raiz). Comandos `npm`, Prisma e `docker compose` rodam aqui, sem pasta `CRM/`. Credenciais:
-`.env` na raiz (não versionado). Hospedagem na VPS: [`README.md`](README.md).
+**Layout do repositório.** CRM e disparo de mensagens são **o mesmo monólito** — não há um
+segundo app para copiar. A raiz git local é a pasta `dash`. A aplicação Next.js (código, Prisma,
+Compose, `.env.example`) vive em `CRM/`. Comandos `npm`, Prisma e `docker compose` rodam de
+dentro de `CRM/`. As regras de interface do Cursor ficam em `../.cursor/rules/ux-ui-crm.mdc`.
+Credenciais locais: `CRM/.env` (não versionado).
+
+Produção: o mesmo código, na **raiz** do GitHub
+`https://github.com/Trindadelucas0/DISPARO-DE-MSG.git` (sem pasta `CRM/` lá). Publicar:
+`npm run publish:github` em `CRM/` (copia para `../DISPARO DE MSG/`, clone gitignored). Não
+edite essa pasta à mão. VPS: `/opt/disparo-de-msg`. Runbook: [`README.md`](README.md).
 
 Requisitos de produto, mapa de telas e fluxos (Mermaid): [`PRD.md`](PRD.md). Este arquivo
 continua sendo a fonte de regra, campo e path de código. Tutorial para o cliente:
-[`docs/como-usar-o-sistema.md`](docs/como-usar-o-sistema.md).
+[`docs/como-usar-o-sistema.md`](docs/como-usar-o-sistema.md)
+(guia visual: wireframe ASCII por tela e passos “clique aqui”; linguagem do dia a dia).
 
-- Versão: 0.16.10 — Kanban único: admin vê todos; vendedor só o dele
+- Versão: 0.16.18 — Uma fonte
 - Fases entregues: 1 a 9 (MVP) + restyle 0.11.0 + identidade 0.12.0 + atendimento 0.13.0 + retorno 0.14.0
-- Última atualização: 08/09/2026 — repositório de VPS: Postgres+Redis+worker no Compose; Next no systemd; runbook em README.md
+- Última atualização: 08/09/2026 — Uma fonte: CRM = disparo. Deploy VPS (`deploy/`, `docker-compose.vps.yml`) vive em `CRM/`. GitHub `DISPARO-DE-MSG` recebe o mesmo código via `npm run publish:github`. `npm start` escuta `127.0.0.1:3001`.
 
 ---
 
@@ -22,9 +30,12 @@ continua sendo a fonte de regra, campo e path de código. Tutorial para o client
 Ferramenta operacional de prospecção outbound. O vendedor recebe uma base de empresas importada
 de planilha da Receita, filtra quem vale contato, registra o status no funil e agenda o próximo
 contato. Em 0.13.0 também dispara **campanhas** (fila Redis/BullMQ) e atende respostas na **Inbox**.
+Campanha, Inbox e WhatsApp **não** são outro produto: usam o mesmo `Lead`, o mesmo worker e o
+mesmo banco. O que se altera em Leads vale para o disparo.
 
 Não é um dashboard de métricas nem um site. É tela de trabalho: densa, orientada a teclado, sem
-elemento decorativo. O padrão visual é obrigatório e está em `PRODUCT.md` e `DESIGN.md`.
+elemento decorativo. O padrão visual é obrigatório e está em
+`../.cursor/rules/ux-ui-crm.mdc` (raiz git), `PRODUCT.md` e `DESIGN.md`.
 
 Com conta **WhatsApp Web (QR)** em `CONNECTED`, o envio do lead e a campanha saem pelo
 worker Baileys (container `crm-worker`). Sem sessão CONNECTED, Leads ainda oferece `wa.me`. O QR é gerado no
@@ -67,33 +78,50 @@ Regras não negociáveis desta separação:
 | --- | --- | --- |
 | Framework | Next.js 15 App Router, React 19, TypeScript estrito | `tsc --noEmit` limpo |
 | Estilo | Tailwind 3.4 + tokens OKLCH | Sem `shadcn add`: componentes escritos à mão |
-| Banco | PostgreSQL 16 no Compose (`crm-postgres`), porta `127.0.0.1:5432`, base `crm_prospeccao` | Volume `crm_pg_data` |
+| Banco | PostgreSQL 16/18, base `crm_prospeccao` | Local: nativo 5432. VPS: container `crm-postgres` só em `127.0.0.1:5432` |
 | ORM | Prisma 6 | migrations em `prisma/migrations` |
-| Cache / rate limit / filas | Redis 7 `crm-redis` `127.0.0.1:6379` + BullMQ | Campanha exige Redis |
+| Cache / rate limit / filas | Redis 7 `crm-redis` `127.0.0.1:6380` + BullMQ | Campanha exige Redis |
 | Autenticação | Auth.js v5, provider Credentials, `bcryptjs` (12 rounds) | JWT, sessão de 8 horas |
 | WhatsApp | Gateway: LegacyManual (wa.me), Baileys (QR no worker), Chatwoot, Mock | Sessão em `data/whatsapp-auth/` |
 | Planilha | `exceljs` | O pacote `xlsx` do npm **não** é usado (CVE de prototype pollution) |
 | Ícones | `lucide-react`, única biblioteca permitida | Regra visual §10 |
-| Processo Next | porta **3001** em `127.0.0.1` (`npm start` / systemd `crm.service`) | Worker: container `crm-worker` |
+| Processo Next | porta **3001** | Local: `npm run dev`. VPS: PM2 `crm` atrás do Nginx :80 |
 
-O Next.js escuta **somente** em `127.0.0.1:3001`. Na VPS o Nginx faz o proxy em 443.
-`AUTH_URL` é a URL pública HTTPS. Runbook: [`README.md`](README.md).
+As portas 6379 e 5433 pertencem a containers de outro projeto (`samuel-redis`, `samuel-postgres`)
+e não são usadas nem alteradas por este sistema.
 
-### Processo na VPS
+O Next.js deste CRM escuta **somente** em `127.0.0.1:3001` no `npm start` (produção / PM2 /
+systemd). `npm run dev` também usa a porta 3001. A porta 3000 fica livre para outros sistemas.
+`AUTH_URL` local aponta para `http://localhost:3001`.
+
+Dois Compose, o mesmo repositório: `docker-compose.yml` = Windows (Redis **6380** + worker,
+Postgres nativo). `docker-compose.vps.yml` = VPS (Postgres + Redis **6379** + worker, volumes
+`crm_pg_data` / `crm_redis_data`). Na VPS nunca suba o compose Windows nem
+`docker-compose.postgres.yml` (outro nome de volume = banco vazio).
+
+### Processo local (só este CRM)
+
+O Next **não** sobe sozinho no logon nem fica religando se cair. Quem liga é `npm run dev`
+(dentro de `CRM/`), na porta 3001. Fechou o terminal, o CRM para.
+
+Os scripts `CRM/scripts/keep-alive.ps1`, `install-keep-alive.ps1` e `uninstall-keep-alive.ps1`
+continuam no repositório, mas a tarefa Windows `CRM-Prospeccao-KeepAlive` **não está instalada**.
+Não instale de novo sem pedido explícito.
 
 | Item | Valor |
 | --- | --- |
-| App | systemd `crm.service` → `npm start` (`127.0.0.1:3001`) |
-| Postgres + Redis + worker | `docker compose up -d` (`crm-postgres`, `crm-redis`, `crm-worker`) |
-| Proxy | Nginx 80/443 → 3001 |
-| Sessão / mídia | `data/whatsapp-auth/`, `data/media/` (gitignored) |
+| Tarefa Windows | removida em 02/09/2026 |
+| Subida | `npm run dev` (manual) |
+| Porta | 3001 |
+| Redis + worker deste projeto | `docker compose up -d` (crm-redis :6380 e crm-worker) |
+| Log antigo | `CRM/logs/keep-alive.log` (pasta ignorada pelo git) |
 
-O worker Baileys **não** precisa de segundo terminal. `docker compose up -d` sobe Postgres,
-Redis e `crm-worker` (`Dockerfile.worker`). O container fala com o Postgres no serviço
-`postgres` da rede Docker e com o Redis em `redis:6379`. Fallback de debug: `npm run worker`
-na raiz — **nunca** junto com o container (lock Redis).
-
-Scripts `scripts/keep-alive.ps1` são só Windows. Na VPS não instale.
+O worker Baileys **não** precisa de segundo terminal. `docker compose up -d` sobe Redis e
+`crm-worker` (`Dockerfile.worker`). O container fala com o Redis na rede do Compose
+(`redis:6379`). O Postgres: no Windows, nativo via `host.docker.internal`; na VPS, container
+irmão `crm-postgres` quando `CRM_DOCKER_DB_HOST=crm-postgres` (`src/lib/worker-docker-env.ts`).
+Sessão e mídia ficam nos volumes `data/whatsapp-auth/` e `data/media/`. Fallback de debug:
+`npm run worker` na pasta CRM — **nunca** junto com o container (lock Redis).
 
 ### Degradação sem Redis
 
@@ -231,7 +259,7 @@ NAT o escritório inteiro compartilha o mesmo IP.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | ADMIN | toda a base | qualquer lead | sim | sim (planilha e agenda WhatsApp) | sim | todas | adicionar/reconectar/importar agenda | sim |
 | MANAGER | toda a base | qualquer lead | sim | sim (planilha e agenda WhatsApp) | sim | todas | reconectar/importar agenda | sim |
-| USER | só leads atribuídos a ele (mesmo Kanban, só os cards dele) | só funil desses leads | não | não | não | só atribuídas; sem telefone | não | não |
+| USER | só leads atribuídos a ele (Kanban: só os já contatados) | só funil desses leads | não | não | não | só atribuídas; sem telefone | não | não |
 
 **Limitação conhecida:** MANAGER hoje enxerga o mesmo que ADMIN porque não existe entidade `Team`
 no modelo. Quando `Team` for criada, `leadScopeWhere` passa a filtrar
@@ -299,15 +327,21 @@ aparecer no filtro padrão; CNPJ na tabela é "—". Rate limit `RATE_LIMITS.wri
 Em **Campanhas**, o mesmo formulário **Incluir na campanha** grava o contato e o coloca em
 `audienceFilter.ids`. Na listagem, Gestor/Admin marca linhas e usa **Disparar campanha**.
 Na **Inbox**, **Salvar contato** usa o mesmo `createManualLead` (`origem=WHATSAPP_INBOX`) com o
-número da conversa — também grava os dois campos.
+número da conversa — também grava os dois campos. O responsável do lead novo é o `assignedUserId`
+da conversa, ou quem salvou se ainda não há dono. Depois do save o painel direito deixa o formulário
+e mostra o contexto do lead (empresa, WhatsApp, funil, responsável).
 
 A barra de filtros é busca + **Filtro** + **Ordenar** + **Opções**; critérios ativos aparecem
 como chips `Campo: valor` (remover o chip zera aquele parâmetro na URL). Mesmo contrato de
-querystring. Código: `src/features/leads/filter-bar.tsx`, `src/features/leads/filter-model.ts`.
+querystring. **Campanha** (`campaignId`) recorta leads que já são destinatários da campanha
+(`campaignRecipients`). Código: `src/features/leads/filter-bar.tsx`, `src/features/leads/filter-model.ts`.
 
-Ações em lote (com seleção ativa): mudar status, atribuir responsável, e **Disparar campanha**
-(ADMIN/MANAGER; cria rascunho com `ids` dos selecionados), no máximo 500 por operação.
-O resultado informa quantos foram atualizados e quantos ficaram fora do escopo do papel.
+Ações em lote: marcar linhas da **página** ou clicar **Selecionar os N do filtro atual**
+(teto 500, mesmos critérios da URL, inclusive campanha/cidade). Atribuir pede confirmação
+com quantidade e nome do vendedor. No modo filtro o POST manda `filters`, não a lista de IDs
+(`POST /api/leads/bulk`, `canReassignLeads`, rate limit `writeHeavy`). Tag, retorno e
+**Disparar campanha** continuam na seleção da página. O resultado informa `updated`, `skipped`,
+`matched` e `capped`.
 
 ### `/leads/:id` — detalhe
 
@@ -388,15 +422,20 @@ Código: `src/features/dashboard/dashboard-screen.tsx`, `src/app/api/dashboard/r
 
 ### `/kanban`
 
-Sete colunas de funil, 40 cards por página, “Carregar mais” incremental. Os filtros da listagem
+Colunas a partir de **Contatado** (`KANBAN_STATUS_ORDER`: Contatado, Qualificado, Negociação, Cliente, Perdido).
+**Novo** e **Pronto para contato** não entram no quadro de ninguém — nem admin/gestor, nem vendedor.
+A base crua continua em `/leads`. O card aparece quando o funil chega em Contatado (disparo, Enviar na Inbox, ou Funil/Alterar status). 40 cards por página, “Carregar mais” incremental. Os filtros da listagem
 vão na querystring de `GET /api/kanban` (`column` = status da coluna; `status` e os demais critérios
-passam por `buildLeadWhere`). `overdueCount` é `COUNT` no recorte, não derivado dos cards carregados.
+passam por `buildLeadWhere`). Pedido de coluna Novo/Pronto devolve vazio. `overdueCount` é `COUNT` no recorte, não derivado dos cards carregados.
 Arrastar chama `PATCH /api/leads/:id/status` (RBAC + audit log + invalidação). O mesmo funil
 também muda na Inbox (`PATCH /api/conversations/:id/lead-status`, quem pode escrever na
 conversa) e avança sozinho Novo/Pronto → Contatado no disparo de campanha e no Enviar da
-Inbox (`src/server/services/lead-funnel.ts`). USER só vê cards **atribuídos a ele**, **sem telefone**, sem linha de responsável (todos os cards são dele)
-e sem filtro Responsável. Coluna vazia: “Nenhum lead seu em {status}.” Não abre o drawer.
-Admin/gestor: **o mesmo quadro** lista a base inteira (os deles e os dos demais). Cada card traz
+Inbox (`src/server/services/lead-funnel.ts`). USER só vê cards **atribuídos a ele** (`responsavelId`),
+**sem telefone**, sem linha de responsável (todos os cards são dele)
+e sem filtro Responsável. Transferir, assumir, atribuir ou o roteamento da campanha também
+grava o responsável do lead no mesmo destino — senão o vendedor atende na Inbox e o card
+não aparece no Kanban **depois de contatado**. Conversa sem lead não gera card. Coluna vazia: “Nenhum lead seu em {status}.” Não abre o drawer.
+Admin/gestor: **o mesmo quadro** lista os leads **já contatados** (os deles e os dos demais). Cada card traz
 `mine` e o rótulo **Você** / nome do responsável / Sem responsável — também no modo compacto.
 Podem arrastar qualquer card (`canWriteLead` true). Duplo clique abre o drawer; o card expandido
 mostra cidade/UF, telefone, ResultBadge, responsável e próxima ação. Compacto/Encerrados são `ghost`
@@ -490,15 +529,26 @@ navega por passos.
 ### `/inbox` e `/inbox/:conversationId` — Inbox
 
 Três colunas: lista, thread, contexto do lead (`PropertyRow` + select **Funil**) — ou formulário
-**Salvar contato** se a conversa não tem lead. Status de conversa ≠ funil: o selo (Aguardando /
+**Salvar contato** se a conversa não tem lead. Depois de salvar, o painel direito passa a ser o
+contexto do lead (empresa, WhatsApp, CNPJ, cidade, funil, responsável, próxima ação) — não permanece
+o formulário. Status de conversa ≠ funil: o selo (Aguardando /
 Em atendimento / Resolvida) não é o Kanban. Quem pode escrever na conversa altera o funil do
-lead na hora (`PATCH /api/conversations/:id/lead-status`). Sem permissão o select explica:
+lead na hora (`PATCH /api/conversations/:id/lead-status`). Funil Novo/Pronto **não** coloca o card
+no Kanban; Contatado em diante sim. Sem permissão o select explica:
 “Assuma a conversa para alterar o funil.”
 Atalhos: `j`/`k`, `r` responder, `a` assumir, `t` transferir, `c` resolver.
 
 USER só lista conversa com `assignedUserId` dele. **Não vê telefone** (API devolve `phone: null`).
 Não vê fila sem dono, não vê conversa de outro vendedor, não transfere, não salva contato,
 não abre a ficha do lead. Responde e move o funil. ADMIN/MANAGER vê tudo, transfere e vê o número.
+**Transferir / Assumir / Atribuir** (e o job `conversation-routing`) copiam o destino para
+`Lead.responsavelId` se a conversa tem lead. O card entra no Kanban daquela pessoa e sai do
+quadro do responsável anterior. Evento invalida também as tags de lead (Kanban ao vivo).
+**Transferir** fatia o thread se houver disparos de **mais de uma campanha**: o vendedor recebe
+a onda mais recente (template da campanha atual e o que veio depois). Os disparos anteriores
+vão para uma conversa **Resolvida** do mesmo lead. Uma campanha em envio só reaproveita conversa
+aberta da **mesma** campanha (ou sem campanha). Inbound grava telefone BR válido (10/11 dígitos);
+JID `@lid` sem número não vira conversa.
 
 | Ação | API |
 | --- | --- |
@@ -508,6 +558,11 @@ não abre a ficha do lead. Responde e move o funil. ADMIN/MANAGER vê tudo, tran
 | Assumir / transferir / resolver / reabrir | `POST .../take\|transfer\|resolve\|reopen` |
 | Funil do lead | `PATCH .../lead-status` |
 | Ligar contato (conversa sem lead) | `POST .../contact` |
+
+`GET /api/conversations/:id` marca como lida, mas **não** publica `conversation.read` se
+`unreadCount` já é 0 (evita loop SSE que refetcha a lista).
+`POST .../contact` exige `assertStaff` + `canWriteConversation`. Se a conversa já tem `leadId`,
+o POST devolve a conversa atual (idempotente) — não responde 422.
 
 UI: `src/features/inbox/*`. Roteamento: `src/lib/routing/*` + worker `conversation-routing`.
 Bolha outbound: data + `messageDeliveryLabel` (Enviada / Entregue / Lida / Falhou) — nunca o enum cru.
@@ -544,7 +599,7 @@ Timeout ~90 s se o worker não responder (`npm run dev` + container `crm-worker`
 `data/whatsapp-auth/<id>/contact-cache.json`. Teto 10_000. Código: `src/lib/whatsapp/contacts.ts`.
 Número da agenda do celular **sem WhatsApp** não entra (o Web só vê quem tem conta).
 
-O Next **não** abre socket WhatsApp. Sem o container `crm-worker` + Redis (`crm-redis` na 6379),
+O Next **não** abre socket WhatsApp. Sem o container `crm-worker` + Redis (`crm-redis` na 6380),
 Conectar devolve erro legível e **não** marca a conta como Falhou só porque o Redis estava
 desligado no boot. O cliente Redis do Next reconecta se o container subir depois.
 Sessão em disco gitignored. No boot o worker reabre socket se a conta está CONNECTED/CONNECTING/QR_CODE
@@ -622,7 +677,7 @@ Comportamento do job:
 | Rate limit de início de campanha | 8 / 10 min por usuário | `RATE_LIMITS.campaignStart` (também `POST .../follow-up` e `POST .../recipients`) |
 | Cadência de disparo de campanha | 5 / min (1 a cada 12 s), fila inteira | `CAMPAIGN_SENDS_PER_MINUTE`, `workers/campaign-worker.ts` |
 | Rate limit de webhook | 120 / min por IP | `RATE_LIMITS.webhook` |
-| Rate limit de escrita comum | 60 / min por usuário | `RATE_LIMITS.writeHeavy` (`POST /api/leads`, `POST /api/conversations/:id/contact`) |
+| Rate limit de escrita comum | 60 / min por usuário | `RATE_LIMITS.writeHeavy` (`POST /api/leads`, `POST /api/leads/bulk`, `POST /api/conversations/:id/contact`) |
 | Rate limit de upload de mídia | 20 / 10 min por usuário + IP | `RATE_LIMITS.mediaUpload` (`POST /api/media`) |
 | Auditoria | `lead.*`, `interaction.*`, `followup.*`, `template.*`, `user.*`, `import.*`, `campaign.*`, `conversation.*`, `whatsapp.*` | `src/server/services/audit.service.ts` |
 | SSE | `GET /api/events`, canal Redis `crm:events` (subscriber único por processo; tags: leads, campaigns, conversations, whatsapp, import-jobs, …) | `src/lib/events.ts`, `src/lib/events-bus.ts`, `src/lib/event-query-keys.ts` |
@@ -681,9 +736,10 @@ texto (`isTypingTarget`).
 
 ## Como usar no dia a dia
 
-Tutorial botão a botão para o cliente (Administrador, Vendedor e Gestor):
-[`docs/como-usar-o-sistema.md`](docs/como-usar-o-sistema.md). Setup de TI fica no apêndice
-desse arquivo. Senha e e-mail de seed **não** entram no guia.
+Tutorial botão a botão para o cliente (Administrador, Vendedor e Gestor), com wireframe ASCII
+por tela: [`docs/como-usar-o-sistema.md`](docs/como-usar-o-sistema.md). Setup de TI fica no
+apêndice desse arquivo (**não entregar ao time de vendas**). Senha e e-mail de seed **não**
+entram no guia.
 
 Jornada curta por perfil (espelho do guia; se divergir, o guia e esta fonte precisam
 fechar juntos):
@@ -698,8 +754,9 @@ fechar juntos):
    é o fluxo. MOCK para teste sem enviar. Campanhas → uma tela (público, quantidade, template,
    retorno 2 h, distribuição, conta CONNECTED) → Iniciar (Redis + worker). Ritmo fixo: 5
    contatos/min (100 ≈ 20 min). Depois: **Adicionar mais** no mesmo público; retorno sai sozinho.
-3. **Vendedor.** Só **Kanban** e **Inbox**. No Kanban só os cards atribuídos a ele (não vê os dos
-   outros no mesmo quadro). Arrasta o funil; responde na conversa. Não vê telefone,
+3. **Vendedor.** Só **Kanban** e **Inbox**. No Kanban só os cards atribuídos a ele **e já contatados**
+   (Novo/Pronto não entram). Quando o gestor transfere a conversa, o lead passa a ser dele;
+   o card entra no Kanban depois do contato. Arrasta o funil; responde na conversa. Não vê telefone,
    não vê a lista de leads, não vê fila sem dono, não transfere, não salva contato, não acessa
    Contatos, Follow-ups, Dashboard, Relatórios, Mensagens, WhatsApp, Importar, Supervisão nem
    Configurações. Funil ≠ selo da conversa.
@@ -708,7 +765,7 @@ fechar juntos):
 
 ## 11. Segredos
 
-`.env` está no `.gitignore`. O arquivo local é `.env` na raiz deste repositório.
+`.env` está no `.gitignore` (raiz git e `CRM/`). O arquivo local da aplicação é `CRM/.env`.
 Apenas `.env.example` é versionado, sem valores reais. Nenhuma variável usa prefixo
 `NEXT_PUBLIC_`, então nenhuma credencial chega ao navegador.
 
@@ -718,9 +775,10 @@ valor**. Não use `npx auth secret`: hoje esse nome resolve para o CLI de outro 
 
 ## 12. Verificação
 
-Na raiz deste repositório:
+Na pasta `CRM/`:
 
-```bash
+```powershell
+cd CRM
 npm run lint          # ESLint
 npm run typecheck     # tsc --noEmit
 npm run design:check  # impeccable detect src/
@@ -729,6 +787,70 @@ npm run db:status     # estado das migrations
 npm run build         # build de produção
 ```
 
+## 13. Deploy / VPS
+
+Ambiente atual (08/09/2026), sem senhas. Código: clone de
+`https://github.com/Trindadelucas0/DISPARO-DE-MSG.git`. Banco **zerado** (só seed:
+1 admin, 7 tags, 3 templates). Sem leads, sem conversas, sem conta WhatsApp, sem
+`data/whatsapp-auth` nem mídia.
+
+| Item | Valor |
+| --- | --- |
+| Pasta | `/opt/disparo-de-msg` (atalho `/root/PROJETOS/DISPARO-DE-MSG`) |
+| App | PM2 processo `crm` (`npm start`), Next só em `127.0.0.1:3001` |
+| Proxy | Nginx :80 → `127.0.0.1:3001` |
+| Postgres | container `crm-postgres`, só `127.0.0.1:5432` |
+| Redis | container `crm-redis`, só `127.0.0.1:6379` |
+| Worker | container `crm-worker` (`docker compose -f docker-compose.vps.yml up -d`) |
+| Firewall | UFW: 22, 80, 443. Banco, Redis e Next não publicam na internet |
+| Node | 22 LTS em `/usr/local` |
+| Túnel | `cloudflared` 2026.8.3, serviço `cloudflared` no systemd. Hostname `crm-exito.avadesk.com.br` → `127.0.0.1:3001` |
+
+`AUTH_URL` na VPS é `https://crm-exito.avadesk.com.br`. Evolution **não** sobe.
+O CRM desta VPS sobe no PM2 (`pm2 status` → `crm`). Outros sistemas no PM2 usam o mesmo túnel: no Zero Trust, Public Hostname → `http://127.0.0.1:PORTA`.
+
+Como ligar um app no túnel (depois do `cloudflared service install` com o token):
+
+1. App escuta só em `127.0.0.1` (não abrir a porta no UFW).
+2. Cloudflare Zero Trust → Networks → Tunnels → o túnel desta VPS → **Public Hostname**.
+3. Subdomínio + domínio → Service `HTTP` → URL `127.0.0.1:PORTA`.
+4. Se for o CRM, `AUTH_URL` no `.env` tem que ser `https://o-subdominio` e `pm2 restart crm`.
+
+Token do conector **não** entra neste arquivo.
+
+Religar / atualizar: runbook em [`README.md`](README.md) (`git pull`, `migrate deploy`,
+`docker compose -f docker-compose.vps.yml up -d --build worker`, `systemctl restart crm` ou
+`pm2 restart crm`). No `.env` da VPS: `COMPOSE_FILE=docker-compose.vps.yml` para o comando
+`docker compose up -d` antigo não subir o compose Windows.
+
+HTTPS (Let's Encrypt) **não** está neste ambiente. Senha root e `.env` não entram neste arquivo.
+
+Resultado na entrega 0.16.18 — **Uma fonte**: CRM e disparo são o mesmo código. `deploy/`,
+`docker-compose.vps.yml` e o runbook vivem em `CRM/`. Publicar no GitHub:
+`npm run publish:github` (não editar `DISPARO DE MSG/` à mão). `npm start` e PM2 escutam
+`127.0.0.1:3001`. Compose Windows (Redis 6380) separado do compose VPS (6379, volume `crm_pg_data`).
+Resultado na entrega 0.16.17 — **Transferir só a campanha atual**: `POST .../transfer` fatia
+o thread quando há mais de uma onda de campanha (`transferSliceStartIndex`). O vendedor fica
+com a conversa aberta da onda recente; disparos anteriores viram conversa Resolvida.
+`campaign-send` não anexa em thread de outra campanha. Inbound exige telefone BR (`inboundStoredPhone`).
+Resultado na entrega 0.16.16 — **Atribuir pelo filtro**: em Leads, **Filtro** inclui Campanha e
+Cidade; a faixa **Selecionar os N do filtro atual** recorta até 500 na ordem da lista.
+**Atribuir** confirma com o nome do vendedor. O servidor aplica `buildLeadWhere` no POST
+(`ids` XOR `filters`). Tag, retorno e Disparar campanha seguem na seleção da página.
+Resultado na entrega 0.16.15 — **Inbox Salvar contato**: o painel direito vira contexto do lead
+(empresa, WhatsApp, funil, responsável) após o save; o cliente grava o POST no cache antes de
+invalidar. POST repetido é idempotente. `GET` da conversa já lida não emite `conversation.read`.
+Lead novo herda o responsável da conversa. Sem o toast “já está ligada a um contato”.
+Resultado na entrega 0.16.14 — **VPS clone GitHub**: `/opt/disparo-de-msg` (systemd + Compose
+Postgres/Redis/worker). Banco zerado: sem leads, conversas ou sessão WhatsApp.
+Resultado na entrega 0.16.13 — **Guia visual do cliente** (só documentação): `docs/como-usar-o-sistema.md` reescrito com wireframe por tela, nomes de botão iguais à UI, FAQ de cadastro à mão (**Adicionar contato** / **Salvar contato**). Sem mudança de código.
+Resultado na entrega 0.16.12 — **Kanban só contatado**: Novo e Pronto ficam fora do quadro
+(admin e vendedor). O card entra a partir de Contatado. `GET /api/kanban` de coluna pré-contato
+devolve vazio. Filtro Status do Kanban não oferece Novo/Pronto.
+Resultado na entrega 0.16.11 — **Transferência no Kanban**: Transferir / Assumir / Atribuir
+e o roteamento da campanha gravam `Lead.responsavelId` no destino. O vendedor passa a ver
+o card no Kanban dele (antes só a Inbox mudava). Conversa já transferida: transferir de novo
+para a mesma pessoa corrige o responsável.
 Resultado na entrega 0.16.10 — **Kanban único**: ADMIN/MANAGER veem todos os leads no mesmo
 quadro e atualizam qualquer card; o responsável aparece no card (**Você** vs nome). USER só vê
 e move os atribuídos a ele; coluna vazia diz “Nenhum lead seu”.
@@ -780,20 +902,3 @@ JID `:device` não entra no telefone. 0.13.6 — JID de envio com DDI 55 e `onWh
 inexistente não marca Enviada). 0.13.5 — Campanha em tela única + `recipientLimit`. WhatsApp
 do lead: `POST /api/leads/:id/whatsapp` envia pela conta CONNECTED (gateway + conversa +
 `SENT`) e só abre `wa.me` sem sessão. 0.13.4: Inbox retoma sessão QR. 0.13.2: contato manual.
-
-## 13. Deploy VPS
-
-Runbook completo (clone, `.env`, Compose, systemd, Nginx, backup, falhas): [`README.md`](README.md).
-Não copiar secrets para o git. Templates sem credencial: `deploy/crm.service` e
-`deploy/nginx.conf.example`.
-
-| Serviço | Bind |
-| --- | --- |
-| Nginx | 80 / 443 públicos |
-| Next.js | `127.0.0.1:3001` |
-| Postgres | `127.0.0.1:5432` (Compose) |
-| Redis | `127.0.0.1:6379` (Compose) |
-| Worker Baileys | container `crm-worker` |
-
-Evolution (`docker-compose.evolution.yml`) é opcional/legado. Instalação padrão = Baileys.
-

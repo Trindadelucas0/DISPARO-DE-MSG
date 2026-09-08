@@ -7,6 +7,7 @@ import {
   setFilterValue,
 } from '@/features/leads/filter-model';
 import { filtersToSearchParams } from '@/features/leads/query';
+import { countActiveFilters } from '@/features/leads/schema';
 
 describe('chip ↔ LeadFilters', () => {
   it('aplicar status, UF e hasWhatsapp gera o mesmo URLSearchParams que filtersToSearchParams', () => {
@@ -51,5 +52,24 @@ describe('chip ↔ LeadFilters', () => {
     expect(params.get('state')).toBeNull();
     expect(params.get('hasWhatsapp')).toBeNull();
     expect(chipsFromFilters(cleared)).toEqual([]);
+  });
+
+  it('campaignId vira chip Campanha e querystring', () => {
+    const applied = setFilterValue(defaultLeadFilters(), { campaignId: 'camp_1' });
+    expect(filtersToSearchParams(applied).get('campaignId')).toBe('camp_1');
+    expect(countActiveFilters(applied)).toBe(1);
+    expect(
+      chipsFromFilters(applied, {
+        states: [],
+        cities: [],
+        segments: [],
+        sources: [],
+        portes: [],
+        responsaveis: [],
+        tags: [],
+        campaigns: [{ id: 'camp_1', name: 'Disparo Campinas' }],
+      }).map((chip) => `${chip.field}: ${chip.value}`),
+    ).toEqual(['Campanha: Disparo Campinas']);
+    expect(filtersToSearchParams(clearFilterValue(applied, 'campaignId')).get('campaignId')).toBeNull();
   });
 });

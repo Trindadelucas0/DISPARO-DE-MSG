@@ -357,7 +357,26 @@ export function InboxScreen({ conversationId }: { conversationId?: string }) {
                     size="sm"
                     variant="outline"
                     disabled={!detail.data.canWrite || !transferUserId}
-                    onClick={() =>
+                    onClick={() => {
+                      // #region agent log
+                      fetch('http://127.0.0.1:7573/ingest/168a1e45-0a27-4a12-9ec9-dabfa1ec792b', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'da6cd6' },
+                        body: JSON.stringify({
+                          sessionId: 'da6cd6',
+                          runId: 'post-fix',
+                          hypothesisId: 'E',
+                          location: 'inbox-screen.tsx:transfer-click',
+                          message: 'user clicked transfer',
+                          data: {
+                            conversationId: conversationId ?? null,
+                            visibleMessageCount: messages.data?.length ?? 0,
+                            hasLead: Boolean(detail.data?.leadId),
+                          },
+                          timestamp: Date.now(),
+                        }),
+                      }).catch(() => {});
+                      // #endregion
                       actions.transfer.mutate(
                         { toUserId: transferUserId },
                         {
@@ -367,8 +386,8 @@ export function InboxScreen({ conversationId }: { conversationId?: string }) {
                           },
                           onError: (error) => toast.error(errorMessage(error)),
                         },
-                      )
-                    }
+                      );
+                    }}
                   >
                     Transferir
                   </Button>
@@ -498,6 +517,9 @@ export function InboxScreen({ conversationId }: { conversationId?: string }) {
               {detail.data.lead ? (
                 <>
                   <PropertyRow label="Empresa">{detail.data.lead.razaoSocial}</PropertyRow>
+                  <PropertyRow label="WhatsApp" numeric>
+                    {formatPhone(detail.data.lead.whatsapp)}
+                  </PropertyRow>
                   <PropertyRow label="CNPJ" numeric>
                     {formatCnpj(detail.data.lead.cnpj)}
                   </PropertyRow>

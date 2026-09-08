@@ -76,7 +76,7 @@ Autorização é decidida **só no servidor** (`src/lib/auth/rbac.ts`). O middle
 - Listagem de leads com filtros na URL, paginação, ordenação, ações em lote (status, responsável, tag, follow-up).
 - Drawer do lead + página completa `/leads/:id` (edição, funil, histórico).
 - Dashboard com 8 KPIs de COUNT, funil HTML clicável, atividade de hoje e próximas 8 ações.
-- Kanban de 7 colunas de funil, arrastar para mudar status, filtros da listagem, modo compacto.
+- Kanban a partir de Contatado (Novo e Pronto ficam em Leads); arrastar para mudar status, filtros da listagem, modo compacto.
 - Fila do dia (`/contacts/today`) priorizada e paginada no servidor.
 - Follow-ups com abas Atrasados / Hoje / Próximos / Todos, COUNT + página 50.
 - Templates de mensagem (CRUD para ADMIN/MANAGER; USER só lê e usa).
@@ -776,7 +776,7 @@ Cada RF aponta rota ou API existente. Sem endpoint inventado.
 | --- | --- | --- |
 | RF-23 | Registrar interação com canal, resultado, anotação e retorno | `POST /api/leads/:id/interactions` |
 | RF-24 | Avanço conservador do funil a partir do resultado (seção 6.3) | `suggestedStatusFromResult` |
-| RF-25 | Kanban 7 colunas; arrastar força status | `GET /api/kanban`, `PATCH /api/leads/:id/status` |
+| RF-25 | Kanban a partir de Contatado; arrastar força status | `GET /api/kanban`, `PATCH /api/leads/:id/status` |
 | RF-26 | Fila do dia na ordem atrasado → hoje → novo → futuro | `GET /api/contacts/today` |
 | RF-27 | WhatsApp: preview + OPENED + `wa.me`; Marcar enviado = SENT; sem celular, botão desabilitado | `POST /api/leads/:id/whatsapp`, `PATCH /api/leads/:id/interactions/:interactionId` |
 | RF-28 | Follow-up: abas Atrasados/Hoje/Próximos/Todos com COUNT + página 50 | `/follow-ups` |
@@ -832,8 +832,8 @@ Contrato em [`src/constants/shortcuts.ts`](src/constants/shortcuts.ts).
 | RNF-05 | Nenhuma variável `NEXT_PUBLIC_` com secret. `.env` fora do git; só `.env.example` versionado |
 | RNF-06 | Cache: listagem 45 s, detalhe/dashboard/relatórios 60 s, facetas 5 min. Invalidação por tag na escrita |
 | RNF-07 | Polling só no job de importação (1 s enquanto PENDING/RUNNING) |
-| RNF-08 | Stack: Next.js 15 App Router, React 19, TypeScript estrito, Prisma 6, PostgreSQL 16 no Compose (`crm_prospeccao` em `127.0.0.1:5432`), Redis 7 em `127.0.0.1:6379` (`crm-redis`) |
-| RNF-09 | Na VPS, 5432, 6379 e 3001 só em localhost; público só 80/443 |
+| RNF-08 | Stack: Next.js 15 App Router, React 19, TypeScript estrito, Prisma 6, PostgreSQL 18 (`crm_prospeccao` na 5432), Redis 7 em `127.0.0.1:6380` (`crm-redis`) |
+| RNF-09 | Portas 6379 e 5433 pertencem a outro projeto e não são usadas |
 | RNF-10 | Planilha via `exceljs`. O pacote `xlsx` do npm não é usado |
 
 ---

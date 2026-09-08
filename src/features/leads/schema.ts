@@ -87,6 +87,8 @@ export const leadFiltersSchema = z.object({
   porte: emptyToUndefined(z.string().trim().max(60)),
   /** Destinatários escolhidos (campanha). Sem este campo o público continua sendo o filtro. */
   ids: z.preprocess(parseLeadIds, z.array(z.string().min(1).max(40)).max(MAX_FILTER_LEAD_IDS).optional()),
+  /** Leads que já são destinatários desta campanha. */
+  campaignId: emptyToUndefined(z.string().trim().min(1).max(40)),
 
   /**
    * Filtro padrão da listagem: apenas ATIVA. `all` traz todas as situações.
@@ -140,6 +142,7 @@ export function countActiveFilters(filters: LeadFilters): number {
     'tag',
     'porte',
     'ids',
+    'campaignId',
     'hasWhatsapp',
     'hasPhone',
     'hasEmail',

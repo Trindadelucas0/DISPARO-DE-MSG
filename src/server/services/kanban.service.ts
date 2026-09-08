@@ -4,6 +4,7 @@ import type { LeadFilters } from '@/features/leads/schema';
 import { CACHE_TAGS, CACHE_TTL, cacheKey, filterHash, getOrSet } from '@/lib/cache';
 import { MUTATION_TAGS, notifyChange } from '@/lib/events';
 import { startOfDay } from '@/lib/dates';
+import { isKanbanVisibleStatus } from '@/constants/lead-status';
 import {
   ForbiddenError,
   canViewLeadContact,
@@ -56,6 +57,9 @@ export async function getKanbanColumn(
   offset = 0,
   filters: LeadFilters,
 ): Promise<KanbanColumn> {
+  if (!isKanbanVisibleStatus(status)) {
+    return { status, total: 0, overdueCount: 0, nextOffset: null, cards: [] };
+  }
   const scope = leadScopeWhere(user);
   const key = cacheKey(
     'kanban',
@@ -152,7 +156,7 @@ export async function changeLeadStatus(
   return applyLeadStatusChange(user.id, id, current.status, status, context);
 }
 
-/** Vendedor na conversa (mesmo sem ser o responsável do lead) pode mover o funil. */
+/** Funil da Inbox: quem escreve na conversa. O responsável do lead segue a conversa em take/transfer/assign/route. */
 export async function changeLeadStatusFromConversation(
   user: SessionUser,
   leadId: string,

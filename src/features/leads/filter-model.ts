@@ -43,7 +43,8 @@ export type FilterChipKey =
   | 'nextContactFrom'
   | 'nextContactTo'
   | 'lastResult'
-  | 'ids';
+  | 'ids'
+  | 'campaignId';
 
 export interface FilterChip {
   readonly key: FilterChipKey;
@@ -113,6 +114,12 @@ export function chipsFromFilters(
       field: 'Escolhidos',
       value: `${filters.ids.length} contato${filters.ids.length === 1 ? '' : 's'}`,
     });
+  }
+  if (filters.campaignId) {
+    const name =
+      facets?.campaigns?.find((campaign) => campaign.id === filters.campaignId)?.name ??
+      filters.campaignId;
+    chips.push({ key: 'campaignId', field: 'Campanha', value: name });
   }
   if (filters.responsible) {
     const name =
@@ -203,6 +210,7 @@ const ADDABLE: readonly AddableFilter[] = [
   { key: 'porte', label: 'Porte' },
   { key: 'segment', label: 'Segmento' },
   { key: 'source', label: 'Origem' },
+  { key: 'campaignId', label: 'Campanha' },
   { key: 'tag', label: 'Tag' },
   { key: 'createdFrom', label: 'Cadastrado' },
   { key: 'lastContactFrom', label: 'Último contato' },
@@ -219,4 +227,13 @@ export function availableAddFilters(filters: LeadFilters): readonly AddableFilte
     if (item.key === 'nextContactFrom') return !filters.nextContactFrom && !filters.nextContactTo;
     return filters[item.key] === undefined;
   });
+}
+
+/**
+ * Identidade do recorte para a seleção em lote. Página e tamanho da página
+ * não entram: paginar no modo filtro não pode zerar a seleção.
+ */
+export function leadFilterSelectionKey(filters: LeadFilters): string {
+  const { page: _page, limit: _limit, ...rest } = filters;
+  return JSON.stringify(rest);
 }

@@ -1,36 +1,23 @@
-# Infra da VPS: Postgres + Redis + worker Baileys.
+# Redis + worker Baileys — Windows local.
 #
-# O Next.js NÃO sobe aqui. Ele roda no host via systemd (`npm start`, porta 3001).
+# O Next.js continua na máquina (`npm run dev` / PM2, porta 3001).
+# Postgres no Windows: nativo (postgresql-x64-18, 5432).
+# Na VPS use docker-compose.vps.yml (Postgres + Redis 6379, volume crm_pg_data).
+# Não use este arquivo na VPS: Redis aqui é 6380.
+#
+# A porta 6379 pertence ao container `samuel-redis` e a 5433 ao `samuel-postgres`, ambos de outro
+# projeto. Este compose publica Redis em 127.0.0.1:6380 e usa volume nomeado próprio para não colidir.
+#
 # Uso: docker compose up -d
-#
-# Nunca rode `npm run worker` no host ao mesmo tempo que o container crm-worker:
-# os dois brigam pelo lock Redis da sessão WhatsApp.
+# Worker local (`npm run worker`) e o container crm-worker não podem rodar juntos: lock Redis.
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: crm-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-crm}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
-      POSTGRES_DB: ${POSTGRES_DB:-crm_prospeccao}
-    ports:
-      - '127.0.0.1:5432:5432'
-    volumes:
-      - crm_pg_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
   redis:
     image: redis:7-alpine
     container_name: crm-redis
     restart: unless-stopped
     ports:
-      - '127.0.0.1:6379:6379'
+      - '127.0.0.1:6380:6379'
     command: ['redis-server', '--appendonly', 'yes', '--save', '60', '1']
     volumes:
       - crm_redis_data:/data
@@ -49,8 +36,6 @@ services:
     restart: unless-stopped
     init: true
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     env_file:
@@ -58,7 +43,7 @@ services:
     environment:
       CRM_WORKER_IN_DOCKER: '1'
       REDIS_URL: redis://redis:6379
-      DATABASE_URL: postgresql://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-crm_prospeccao}?schema=public
+      CRM_DOCKER_DB_HOST: ${CRM_DOCKER_DB_HOST:-}
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     volumes:
@@ -70,7 +55,5 @@ services:
       - ./tsconfig.json:/app/tsconfig.json
 
 volumes:
-  crm_pg_data:
-    name: crm_pg_data
   crm_redis_data:
     name: crm_redis_data

@@ -18,7 +18,7 @@ import { ResultBadge, StatusBadge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/data-state';
 import { CompanyIdentity } from '@/components/ui/record-avatar';
-import { LEAD_STATUS_ORDER, leadStatusLabel } from '@/constants/lead-status';
+import { KANBAN_STATUS_ORDER, isKanbanVisibleStatus, leadStatusLabel } from '@/constants/lead-status';
 import { FilterBar } from '@/features/leads/filter-bar';
 import { LeadDrawer } from '@/features/leads/lead-drawer';
 import { useLeadFacets } from '@/features/leads/use-leads';
@@ -239,6 +239,12 @@ export function KanbanScreen() {
   const [showClosed, setShowClosed] = React.useState(true);
 
   React.useEffect(() => {
+    if (filters.status && !isKanbanVisibleStatus(filters.status)) {
+      setFilter({ status: undefined });
+    }
+  }, [filters.status, setFilter]);
+
+  React.useEffect(() => {
     void idbGet<boolean>(IDB_KEYS.kanbanCompact).then((value) => {
       if (value !== undefined) setCompact(value);
     });
@@ -263,9 +269,9 @@ export function KanbanScreen() {
     });
   };
 
-  const columns = showClosed
-    ? LEAD_STATUS_ORDER
-    : LEAD_STATUS_ORDER.filter((status) => !CLOSED.has(status));
+  const columns = (showClosed
+    ? KANBAN_STATUS_ORDER
+    : KANBAN_STATUS_ORDER.filter((status) => !CLOSED.has(status)));
 
   const onDragEnd = React.useCallback(
     (event: DragEndEvent) => {
@@ -274,6 +280,7 @@ export function KanbanScreen() {
       if (!over || !card) return;
       const next = String(over) as LeadStatus;
       if (card.status === next) return;
+      if (!isKanbanVisibleStatus(next)) return;
       change.mutate(
         { id: card.id, status: next },
         {
@@ -290,8 +297,8 @@ export function KanbanScreen() {
       <PageHeader title="Kanban">
         <span className="hidden text-2xs text-muted-foreground lg:inline">
           {isSeller
-            ? 'Só os seus leads. Arraste o card para mudar o funil.'
-            : 'Todos os leads no mesmo quadro. Arraste para mudar o funil. Duplo clique abre o drawer.'}
+            ? 'Só os seus leads já contatados. Arraste o card para mudar o funil.'
+            : 'Só leads já contatados. Arraste para mudar o funil. Duplo clique abre o drawer.'}
         </span>
         <Button
           size="sm"
@@ -320,6 +327,7 @@ export function KanbanScreen() {
         onReset={reset}
         hideResponsible={isSeller}
         searchPlaceholder={isSeller ? 'Nome da empresa' : undefined}
+        statusOptions={KANBAN_STATUS_ORDER}
       />
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
         <div className="scroll-thin flex min-h-0 flex-1 overflow-x-auto">

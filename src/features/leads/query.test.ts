@@ -15,4 +15,12 @@ describe('palette query', () => {
     expect(url).toContain('limit=8');
     expect(url.startsWith('/api/leads?')).toBe(true);
   });
+
+  it('leadsApiUrl serializa campaignId', () => {
+    const url = leadsApiUrl({
+      ...defaultLeadFilters(),
+      campaignId: 'camp_1',
+    });
+    expect(url).toContain('campaignId=camp_1');
+  });
 });

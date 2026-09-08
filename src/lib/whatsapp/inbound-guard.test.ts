@@ -4,6 +4,7 @@ import {
   inboundBodyFromBaileysMessage,
   inboundCaptionForStorage,
   inboundMediaKindFromBaileysMessage,
+  inboundStoredPhone,
   normalizeInboundPhone,
   resolveInboundSender,
   shouldAcceptInbound,
@@ -70,6 +71,12 @@ describe('inbound WhatsApp (sem Baileys, sem rede)', () => {
     expect(
       resolveInboundSender('53455246884964@lid', '5538998100827:2@s.whatsapp.net'),
     ).toBe('38998100827');
+  });
+
+  it('recusa LID sem telefone e aceita número BR', () => {
+    expect(inboundStoredPhone('53455246884964@lid')).toBeNull();
+    expect(inboundStoredPhone('123456789012345678')).toBeNull();
+    expect(inboundStoredPhone('5538998100827')).toBe('38998100827');
   });
 
   it('expõe qrCode só para provedor de sessão QR', () => {

@@ -1,16 +1,11 @@
-import { onlyDigits } from '@/lib/validation/cnpj';
 import { MUTATION_TAGS, notifyChange } from '@/lib/events';
 import { prisma } from '@/lib/db';
 import { messageKindFromMedia, messagePreviewFromMedia } from '@/constants/media';
-import { inboundCaptionForStorage } from '@/lib/whatsapp/inbound-guard';
+import { inboundCaptionForStorage, inboundStoredPhone } from '@/lib/whatsapp/inbound-guard';
+import { leadMatchesImportedPhone, phoneMatchVariants } from '@/lib/whatsapp/contacts';
+import { parsePhone } from '@/lib/validation/phone';
 import type { WhatsappInboundJob } from '@/server/queue/names';
 import { enqueueConversationRouting } from '@/server/queue/enqueue';
-
-function normalizePhone(raw: string): string {
-  const digits = onlyDigits(raw);
-  if (digits.startsWith('55') && digits.length >= 12) return digits.slice(2);
-  return digits;
-}
 
 /**
  * Inbound. Número conhecido liga a conversa ao lead.
@@ -22,22 +17,29 @@ export async function processWhatsappInboundJob(job: WhatsappInboundJob): Promis
   });
   if (existing) return 'ignored';
 
-  const phone = normalizePhone(job.from);
-  if (phone.length < 10) return 'ignored';
+  const phone = inboundStoredPhone(job.from);
+  if (!phone) return 'ignored';
 
   const account = await prisma.whatsAppAccount.findUnique({ where: { id: job.accountId } });
   if (!account) return 'ignored';
 
-  const lead = await prisma.lead.findFirst({
+  const variants = phoneMatchVariants(phone);
+  const leadCandidates = await prisma.lead.findMany({
     where: {
-      OR: [
-        { whatsapp: { contains: phone.slice(-11) } },
-        { whatsapp: { contains: phone.slice(-10) } },
-        { telefone: { contains: phone.slice(-11) } },
-        { telefone: { contains: phone.slice(-10) } },
-      ],
+      OR: variants.flatMap((value) => [
+        { whatsapp: { contains: value } },
+        { telefone: { contains: value } },
+      ]),
     },
+    take: 25,
+    select: { id: true, whatsapp: true, telefone: true, phones: true },
   });
+  const matchedLeads = leadCandidates.filter((row) => leadMatchesImportedPhone(row, phone));
+  const leadMatchCount = matchedLeads.length;
+  const lead =
+    matchedLeads.find((row) => parsePhone(row.whatsapp)?.digits === phone) ??
+    matchedLeads[0] ??
+    null;
 
   let conversation = lead
     ? await prisma.conversation.findFirst({
@@ -48,18 +50,28 @@ export async function processWhatsappInboundJob(job: WhatsappInboundJob): Promis
         },
         orderBy: { updatedAt: 'desc' },
       })
-    : await prisma.conversation.findFirst({
-        where: {
-          leadId: null,
-          whatsappAccountId: account.id,
-          status: { not: 'RESOLVED' },
-          OR: [{ phone: { contains: phone.slice(-11) } }, { phone: { contains: phone.slice(-10) } }],
-        },
-        orderBy: { updatedAt: 'desc' },
-      });
+    : null;
+  if (!lead) {
+    const openUnknown = await prisma.conversation.findMany({
+      where: {
+        leadId: null,
+        whatsappAccountId: account.id,
+        status: { not: 'RESOLVED' },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 80,
+    });
+    conversation =
+      openUnknown.find((row) =>
+        leadMatchesImportedPhone(
+          { id: row.id, whatsapp: row.phone, telefone: null, phones: [] },
+          phone,
+        ),
+      ) ?? null;
+  }
 
   const receivedAt = new Date(job.receivedAt);
-  const storedPhone = lead?.whatsapp ?? phone;
+  const storedPhone = phone;
   const kind = messageKindFromMedia(
     job.kind === 'IMAGE' || job.kind === 'VIDEO' || job.kind === 'AUDIO' ? job.kind : null,
     false,
@@ -67,6 +79,38 @@ export async function processWhatsappInboundJob(job: WhatsappInboundJob): Promis
   const body = inboundCaptionForStorage(job.body, Boolean(job.mediaId));
   const preview = messagePreviewFromMedia(body, kind);
 
+  // #region agent log
+  {
+    const existingMsgCount = conversation
+      ? await prisma.message.count({ where: { conversationId: conversation.id } })
+      : 0;
+    const storedDigits = conversation ? conversation.phone.replace(/\D/g, '') : '';
+    fetch('http://127.0.0.1:7573/ingest/168a1e45-0a27-4a12-9ec9-dabfa1ec792b', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'da6cd6' },
+      body: JSON.stringify({
+        sessionId: 'da6cd6',
+        runId: 'post-fix',
+        hypothesisId: 'A',
+        location: 'whatsapp-inbound.ts:match',
+        message: 'inbound conversation match',
+        data: {
+          fromLen: phone.length,
+          leadMatched: Boolean(lead),
+          leadMatchCount,
+          reusedConversation: Boolean(conversation),
+          conversationId: conversation?.id ?? null,
+          existingMsgCount,
+          assignedUserId: conversation?.assignedUserId ?? null,
+          phoneKeyMismatch: Boolean(
+            conversation && storedDigits.slice(-10) !== phone.slice(-10),
+          ),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }
+  // #endregion
   if (!conversation) {
     conversation = await prisma.conversation.create({
       data: {

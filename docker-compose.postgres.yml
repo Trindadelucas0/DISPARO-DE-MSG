@@ -1,0 +1,28 @@
+# Postgres isolado — só máquina nova SEM o volume crm_pg_data.
+# A VPS em /opt/disparo-de-msg usa docker-compose.vps.yml (volume crm_pg_data).
+# Este arquivo cria crm_postgres_data: subir na VPS atual = banco vazio.
+#
+# Windows local: Postgres nativo na 5432; não use este arquivo.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: crm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: crm_prospeccao
+      POSTGRES_USER: crm
+      POSTGRES_PASSWORD: ${CRM_DB_PASSWORD:?defina CRM_DB_PASSWORD no .env}
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - crm_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U crm -d crm_prospeccao']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  crm_postgres_data:
+    name: crm_postgres_data

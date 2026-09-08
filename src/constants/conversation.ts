@@ -67,6 +67,61 @@ export function messageDeliveryLabel(status: string): string {
   return 'Falhou';
 }
 
+/**
+ * Kanban do vendedor filtra por `Lead.responsavelId`. Quem recebe a conversa
+ * (transferir / assumir / atribuir / roteamento) passa a ser o responsável
+ * do lead ligado, senão o card não entra no quadro dele.
+ */
+export function shouldAssignLeadOwner(params: {
+  readonly leadId: string | null | undefined;
+  readonly currentResponsavelId: string | null | undefined;
+  readonly toUserId: string;
+}): boolean {
+  if (!params.leadId) return false;
+  return params.currentResponsavelId !== params.toUserId;
+}
+
+export function shouldNotifyConversationRead(unreadCount: number): boolean {
+  return unreadCount > 0;
+}
+
+export function inboxAttachLeadOwnerId(
+  assignedUserId: string | null | undefined,
+  actorUserId: string,
+): string {
+  return assignedUserId || actorUserId;
+}
+
+export type TransferSliceMessage = {
+  readonly campaignId: string | null;
+  readonly direction: string;
+  readonly kind: string;
+};
+
+/** Disparo de campanha (template/mídia). Resposta manual TEXT não abre onda nova. */
+export function isCampaignWaveMessage(row: TransferSliceMessage): boolean {
+  return row.direction === 'OUTBOUND' && Boolean(row.campaignId) && row.kind !== 'TEXT';
+}
+
+/**
+ * Índice da primeira mensagem da campanha mais recente.
+ * 0 = não fatia (uma onda ou só conversa orgânica).
+ */
+export function transferSliceStartIndex(messages: readonly TransferSliceMessage[]): number {
+  const firstIndexByCampaign = new Map<string, number>();
+  let latestCampaignId: string | null = null;
+  for (let index = 0; index < messages.length; index += 1) {
+    const row = messages[index]!;
+    if (!isCampaignWaveMessage(row) || !row.campaignId) continue;
+    if (!firstIndexByCampaign.has(row.campaignId)) {
+      firstIndexByCampaign.set(row.campaignId, index);
+    }
+    latestCampaignId = row.campaignId;
+  }
+  if (!latestCampaignId || firstIndexByCampaign.size <= 1) return 0;
+  return firstIndexByCampaign.get(latestCampaignId) ?? 0;
+}
+
 export const INBOX_FILTERS = [
   'all',
   'unread',

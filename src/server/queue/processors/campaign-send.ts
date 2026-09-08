@@ -17,6 +17,7 @@ import { messageKindFromMedia, messagePreviewFromMedia } from '@/constants/media
 import { buildLeadTemplateVars, followUpIdempotencyKey } from '@/server/queue/campaign-helpers';
 import type { CampaignSendJob } from '@/server/queue/names';
 import { enqueueCampaignSend, enqueueConversationRouting } from '@/server/queue/enqueue';
+import { findOpenConversationForCampaign } from '@/server/repositories/conversation.repository';
 import { markLeadContactedOnOutbound } from '@/server/services/lead-funnel';
 
 type RecipientWithCampaign = NonNullable<Awaited<ReturnType<typeof loadRecipient>>>;
@@ -327,14 +328,11 @@ async function dispatchCampaignMessage(input: {
   const kind = messageKindFromMedia(media?.kind, true);
   const preview = messagePreviewFromMedia(body, kind);
 
-  let conversation = await prisma.conversation.findFirst({
-    where: {
-      leadId: recipient.leadId,
-      whatsappAccountId: account.id,
-      status: { not: 'RESOLVED' },
-    },
-    orderBy: { updatedAt: 'desc' },
-  });
+  let conversation = await findOpenConversationForCampaign(
+    recipient.leadId,
+    account.id,
+    campaign.id,
+  );
 
   if (!conversation) {
     conversation = await prisma.conversation.create({
@@ -404,7 +402,7 @@ async function dispatchCampaignMessage(input: {
         data: {
           lastMessageAt: new Date(),
           lastMessagePreview: preview,
-          campaignId: conversation.campaignId ?? campaign.id,
+          campaignId: campaign.id,
         },
       }),
       prisma.whatsAppAccount.update({

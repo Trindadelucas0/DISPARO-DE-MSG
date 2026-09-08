@@ -99,6 +99,16 @@ export const LEAD_STATUS_ORDER: readonly LeadStatus[] = Object.values(LEAD_STATU
 
 export const LEAD_STATUS_VALUES = LEAD_STATUS_ORDER;
 
+/** Novo e Pronto não entram no Kanban (admin nem vendedor). Base crua fica em Leads. */
+const KANBAN_PRE_CONTACT = new Set<LeadStatus>(['NEW', 'READY_TO_CONTACT']);
+
+export function isKanbanVisibleStatus(status: LeadStatus): boolean {
+  return !KANBAN_PRE_CONTACT.has(status);
+}
+
+export const KANBAN_STATUS_ORDER: readonly LeadStatus[] =
+  LEAD_STATUS_ORDER.filter(isKanbanVisibleStatus);
+
 export function leadStatusMeta(status: LeadStatus): LeadStatusMeta {
   return LEAD_STATUS_META[status];
 }

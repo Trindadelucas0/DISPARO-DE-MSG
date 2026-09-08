@@ -1,7 +1,16 @@
+import { appendFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import { Role, type LeadStatus } from '@prisma/client';
 import { z } from 'zod';
 
-import type { InboxFilter } from '@/constants/conversation';
+import {
+  inboxAttachLeadOwnerId,
+  shouldAssignLeadOwner,
+  shouldNotifyConversationRead,
+  transferSliceStartIndex,
+  type InboxFilter,
+} from '@/constants/conversation';
 import { messageKindFromMedia, messagePreviewFromMedia } from '@/constants/media';
 import {
   canSuperviseInbox,
@@ -27,6 +36,7 @@ import {
   findOpenConversationForLeadAccount,
   listMessages,
 } from '@/server/repositories/conversation.repository';
+import { connectLeadOwner } from '@/server/repositories/lead.repository';
 import { findSendableConnectedAccount } from '@/server/repositories/whatsapp.repository';
 import { createManualLead, getLead } from '@/server/services/lead.service';
 import { recordAudit } from '@/server/services/audit.service';
@@ -67,6 +77,28 @@ export const transferSchema = z.object({
   note: z.string().trim().max(500).optional(),
 });
 
+function assignmentNotifyTags(leadId: string | null, leadSynced: boolean) {
+  if (leadSynced && leadId) {
+    return [...MUTATION_TAGS.conversation, ...MUTATION_TAGS.lead(leadId)];
+  }
+  return [...MUTATION_TAGS.conversation];
+}
+
+async function auditLeadFollowsConversation(params: {
+  actorUserId: string | null;
+  leadId: string;
+  fromUserId: string | null;
+  toUserId: string;
+}) {
+  await recordAudit({
+    userId: params.actorUserId,
+    action: 'lead.reassign.from_conversation',
+    entity: 'Lead',
+    entityId: params.leadId,
+    changes: { responsavelId: { from: params.fromUserId, to: params.toUserId } },
+  });
+}
+
 function serializeConversation(
   row: NonNullable<Awaited<ReturnType<typeof findConversationById>>>,
   user: SessionUser,
@@ -99,6 +131,7 @@ function serializeConversation(
           cidade: row.lead.cidade,
           estado: row.lead.estado,
           status: row.lead.status,
+          whatsapp: row.lead.whatsapp,
           responsavelId: row.lead.responsavelId,
           responsavelNome: row.lead.responsavel?.name ?? null,
           nextContactAt: row.lead.nextContactAt?.toISOString() ?? null,
@@ -163,7 +196,10 @@ export async function getConversationMessages(user: SessionUser, id: string) {
 }
 
 export async function markConversationRead(user: SessionUser, id: string) {
-  await getConversation(user, id);
+  const conversation = await getConversation(user, id);
+  if (!shouldNotifyConversationRead(conversation.unreadCount)) {
+    return conversation;
+  }
   await prisma.conversation.update({
     where: { id },
     data: { unreadCount: 0 },
@@ -523,6 +559,12 @@ export async function takeConversation(user: SessionUser, id: string) {
   }
   await assertAssignable(id, user.id);
   const from = conversation.assignedUserId;
+  const leadId = conversation.leadId;
+  const syncLead = shouldAssignLeadOwner({
+    leadId,
+    currentResponsavelId: conversation.lead?.responsavelId,
+    toUserId: user.id,
+  });
   await prisma.$transaction([
     prisma.conversation.update({
       where: { id },
@@ -542,14 +584,27 @@ export async function takeConversation(user: SessionUser, id: string) {
         createdById: user.id,
       },
     }),
+    ...(syncLead && leadId ? [connectLeadOwner(leadId, user.id)] : []),
   ]);
+  if (syncLead && leadId) {
+    await auditLeadFollowsConversation({
+      actorUserId: user.id,
+      leadId,
+      fromUserId: conversation.lead?.responsavelId ?? null,
+      toUserId: user.id,
+    });
+  }
   await recordAudit({
     userId: user.id,
     action: 'conversation.take',
     entity: 'Conversation',
     entityId: id,
   });
-  await notifyChange({ type: 'conversation.take', tags: MUTATION_TAGS.conversation, entityId: id });
+  await notifyChange({
+    type: 'conversation.take',
+    tags: assignmentNotifyTags(leadId, syncLead),
+    entityId: id,
+  });
   return getConversation(user, id);
 }
 
@@ -564,6 +619,12 @@ export async function assignConversation(
   }
   const conversation = await getConversation(user, id);
   await assertAssignable(id, toUserId);
+  const leadId = conversation.leadId;
+  const syncLead = shouldAssignLeadOwner({
+    leadId,
+    currentResponsavelId: conversation.lead?.responsavelId,
+    toUserId,
+  });
   await prisma.$transaction([
     prisma.conversation.update({
       where: { id },
@@ -584,7 +645,16 @@ export async function assignConversation(
         createdById: user.id,
       },
     }),
+    ...(syncLead && leadId ? [connectLeadOwner(leadId, toUserId)] : []),
   ]);
+  if (syncLead && leadId) {
+    await auditLeadFollowsConversation({
+      actorUserId: user.id,
+      leadId,
+      fromUserId: conversation.lead?.responsavelId ?? null,
+      toUserId,
+    });
+  }
   await recordAudit({
     userId: user.id,
     action: 'conversation.assign',
@@ -592,7 +662,11 @@ export async function assignConversation(
     entityId: id,
     changes: { toUserId },
   });
-  await notifyChange({ type: 'conversation.assign', tags: MUTATION_TAGS.conversation, entityId: id });
+  await notifyChange({
+    type: 'conversation.assign',
+    tags: assignmentNotifyTags(leadId, syncLead),
+    entityId: id,
+  });
   return getConversation(user, id);
 }
 
@@ -606,26 +680,173 @@ export async function transferConversation(
   }
   const conversation = await getConversation(user, id);
   await assertAssignable(id, input.toUserId);
-  await prisma.$transaction([
-    prisma.conversation.update({
-      where: { id },
-      data: {
-        assignedUserId: input.toUserId,
-        assignedAt: new Date(),
-        status: 'OPEN',
-      },
-    }),
-    prisma.conversationAssignment.create({
+  const leadId = conversation.leadId;
+  const syncLead = shouldAssignLeadOwner({
+    leadId,
+    currentResponsavelId: conversation.lead?.responsavelId,
+    toUserId: input.toUserId,
+  });
+  const [msgByDirection, sellerBefore, sameLeadOthers, threadMessages, rawConversation] =
+    await Promise.all([
+      prisma.message.groupBy({
+        by: ['direction'],
+        where: { conversationId: id },
+        _count: { _all: true },
+      }),
+      prisma.conversation.findMany({
+        where: { assignedUserId: input.toUserId },
+        select: { id: true },
+      }),
+      leadId
+        ? prisma.conversation.findMany({
+            where: { leadId, id: { not: id } },
+            select: { id: true, assignedUserId: true, status: true },
+          })
+        : Promise.resolve([]),
+      prisma.message.findMany({
+        where: { conversationId: id },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          campaignId: true,
+          direction: true,
+          kind: true,
+          body: true,
+          createdAt: true,
+        },
+      }),
+      prisma.conversation.findUniqueOrThrow({
+        where: { id },
+        select: { phone: true, whatsappAccountId: true, unreadCount: true },
+      }),
+    ]);
+  const splitStart = transferSliceStartIndex(threadMessages);
+  const leftoverMessages = splitStart > 0 ? threadMessages.slice(0, splitStart) : [];
+  const sliceMessages = splitStart > 0 ? threadMessages.slice(splitStart) : threadMessages;
+  const latestCampaignId =
+    [...sliceMessages].reverse().find((row) => row.campaignId)?.campaignId ??
+    conversation.campaignId;
+  // #region agent log
+  {
+    const payload = {
+      sessionId: 'da6cd6',
+      runId: 'post-fix',
+      hypothesisId: 'E',
+      location: 'conversation.service.ts:transfer:before',
+      message: 'transfer before assign',
       data: {
         conversationId: id,
-        fromUserId: conversation.assignedUserId,
         toUserId: input.toUserId,
-        reason: 'TRANSFER',
-        note: input.note ?? null,
-        createdById: user.id,
+        hasLead: Boolean(leadId),
+        phoneLen: conversation.phone?.length ?? 0,
+        inboundCount: msgByDirection.find((row) => row.direction === 'INBOUND')?._count._all ?? 0,
+        outboundCount: msgByDirection.find((row) => row.direction === 'OUTBOUND')?._count._all ?? 0,
+        messageCount: msgByDirection.reduce((sum, row) => sum + row._count._all, 0),
+        sellerConvCountBefore: sellerBefore.length,
+        sameLeadOtherCount: sameLeadOthers.length,
+        sameLeadOtherAssigned: sameLeadOthers.filter((row) => row.assignedUserId).length,
+        splitStart,
+        leftoverCount: leftoverMessages.length,
+        sliceCount: sliceMessages.length,
       },
-    }),
-  ]);
+      timestamp: Date.now(),
+    };
+    fetch('http://127.0.0.1:7573/ingest/168a1e45-0a27-4a12-9ec9-dabfa1ec792b', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'da6cd6' },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+    void appendFile(join(process.cwd(), '..', 'debug-da6cd6.log'), `${JSON.stringify(payload)}\n`).catch(
+      () => {},
+    );
+  }
+  // #endregion
+  const now = new Date();
+  if (leftoverMessages.length > 0) {
+    const leftoverLast = leftoverMessages[leftoverMessages.length - 1]!;
+    const sliceLast = sliceMessages[sliceMessages.length - 1]!;
+    const leftoverPreview = messagePreviewFromMedia(leftoverLast.body, leftoverLast.kind);
+    const slicePreview = messagePreviewFromMedia(sliceLast.body, sliceLast.kind);
+    const sliceFirstInbound = sliceMessages.find((row) => row.direction === 'INBOUND')?.createdAt ?? null;
+    await prisma.$transaction(async (tx) => {
+      const leftover = await tx.conversation.create({
+        data: {
+          leadId,
+          whatsappAccountId: rawConversation.whatsappAccountId,
+          campaignId: leftoverLast.campaignId,
+          phone: rawConversation.phone,
+          status: 'RESOLVED',
+          resolvedAt: now,
+          lastMessageAt: leftoverLast.createdAt,
+          lastMessagePreview: leftoverPreview,
+          unreadCount: 0,
+        },
+      });
+      await tx.message.updateMany({
+        where: { id: { in: leftoverMessages.map((row) => row.id) } },
+        data: { conversationId: leftover.id },
+      });
+      await tx.conversation.update({
+        where: { id },
+        data: {
+          assignedUserId: input.toUserId,
+          assignedAt: now,
+          status: 'OPEN',
+          campaignId: latestCampaignId,
+          lastMessageAt: sliceLast.createdAt,
+          lastMessagePreview: slicePreview,
+          firstInboundAt: sliceFirstInbound,
+          unreadCount: rawConversation.unreadCount,
+        },
+      });
+      await tx.conversationAssignment.create({
+        data: {
+          conversationId: id,
+          fromUserId: conversation.assignedUserId,
+          toUserId: input.toUserId,
+          reason: 'TRANSFER',
+          note: input.note ?? null,
+          createdById: user.id,
+        },
+      });
+      if (syncLead && leadId) {
+        await tx.lead.update({
+          where: { id: leadId },
+          data: { responsavel: { connect: { id: input.toUserId } } },
+        });
+      }
+    });
+  } else {
+    await prisma.$transaction([
+      prisma.conversation.update({
+        where: { id },
+        data: {
+          assignedUserId: input.toUserId,
+          assignedAt: now,
+          status: 'OPEN',
+        },
+      }),
+      prisma.conversationAssignment.create({
+        data: {
+          conversationId: id,
+          fromUserId: conversation.assignedUserId,
+          toUserId: input.toUserId,
+          reason: 'TRANSFER',
+          note: input.note ?? null,
+          createdById: user.id,
+        },
+      }),
+      ...(syncLead && leadId ? [connectLeadOwner(leadId, input.toUserId)] : []),
+    ]);
+  }
+  if (syncLead && leadId) {
+    await auditLeadFollowsConversation({
+      actorUserId: user.id,
+      leadId,
+      fromUserId: conversation.lead?.responsavelId ?? null,
+      toUserId: input.toUserId,
+    });
+  }
   await recordAudit({
     userId: user.id,
     action: 'conversation.transfer',
@@ -635,9 +856,44 @@ export async function transferConversation(
   });
   await notifyChange({
     type: 'conversation.transfer',
-    tags: MUTATION_TAGS.conversation,
+    tags: assignmentNotifyTags(leadId, syncLead),
     entityId: id,
   });
+  // #region agent log
+  const sellerAfter = await prisma.conversation.findMany({
+    where: { assignedUserId: input.toUserId },
+    select: { id: true },
+  });
+  const beforeIds = new Set(sellerBefore.map((row) => row.id));
+  const newlyAssignedIds = sellerAfter.map((row) => row.id).filter((rowId) => !beforeIds.has(rowId));
+  const afterPayload = {
+    sessionId: 'da6cd6',
+    runId: 'post-fix',
+    hypothesisId: 'B',
+    location: 'conversation.service.ts:transfer:after',
+    message: 'transfer after assign',
+    data: {
+      conversationId: id,
+      toUserId: input.toUserId,
+      sellerConvCountAfter: sellerAfter.length,
+      newlyAssignedCount: newlyAssignedIds.length,
+      newlyAssignedIncludesTarget: newlyAssignedIds.includes(id),
+      extraAssignedCount: newlyAssignedIds.filter((rowId) => rowId !== id).length,
+      splitApplied: leftoverMessages.length > 0,
+      leftoverCount: leftoverMessages.length,
+      sliceCount: sliceMessages.length,
+    },
+    timestamp: Date.now(),
+  };
+  fetch('http://127.0.0.1:7573/ingest/168a1e45-0a27-4a12-9ec9-dabfa1ec792b', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'da6cd6' },
+    body: JSON.stringify(afterPayload),
+  }).catch(() => {});
+  void appendFile(join(process.cwd(), '..', 'debug-da6cd6.log'), `${JSON.stringify(afterPayload)}\n`).catch(
+    () => {},
+  );
+  // #endregion
   return getConversation(user, id);
 }
 
@@ -729,7 +985,7 @@ export async function attachConversationContact(
     throw new ForbiddenError('Você não pode alterar esta conversa.');
   }
   if (conversation.leadId) {
-    throw new BadRequestError('Esta conversa já está ligada a um contato.');
+    return getConversation(user, id);
   }
 
   const lead = await createManualLead(
@@ -739,7 +995,11 @@ export async function attachConversationContact(
       whatsapp: input.whatsapp?.trim() || conversation.phone || undefined,
       cnpj: input.cnpj,
     },
-    { origem: 'WHATSAPP_INBOX', status: 'CONTACTED' },
+    {
+      origem: 'WHATSAPP_INBOX',
+      status: 'CONTACTED',
+      responsavelId: inboxAttachLeadOwnerId(conversation.assignedUserId, user.id),
+    },
   );
 
   await prisma.conversation.update({

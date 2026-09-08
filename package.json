@@ -1,6 +1,6 @@
 {
   "name": "crm-prospeccao",
-  "version": "0.16.10",
+  "version": "0.16.18",
   "private": true,
   "description": "CRM de prospecção, leads, kanban, follow-up, campanhas e inbox",
   "scripts": {
@@ -10,6 +10,7 @@
     "dev:keep:uninstall": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/uninstall-keep-alive.ps1",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1 --port 3001",
+    "publish:github": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-github.ps1",
     "worker": "tsx workers/index.ts",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",

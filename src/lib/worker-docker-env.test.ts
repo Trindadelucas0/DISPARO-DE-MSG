@@ -25,6 +25,15 @@ describe('rewriteDatabaseUrlForDocker', () => {
     const url = 'postgresql://u:p@host.docker.internal:5432/crm';
     expect(rewriteDatabaseUrlForDocker(url)).toBe(url);
   });
+
+  it('troca loopback pelo host do container irmão quando informado', () => {
+    expect(
+      rewriteDatabaseUrlForDocker(
+        'postgresql://u:p@127.0.0.1:5432/crm',
+        'crm-postgres',
+      ),
+    ).toBe('postgresql://u:p@crm-postgres:5432/crm');
+  });
 });
 
 describe('applyDockerWorkerEnv', () => {
@@ -47,5 +56,16 @@ describe('applyDockerWorkerEnv', () => {
     applyDockerWorkerEnv(env);
     expect(env.DATABASE_URL).toBe('postgresql://u:p@host.docker.internal:5432/crm');
     expect(env.REDIS_URL).toBe(DOCKER_REDIS_URL);
+  });
+
+  it('no Compose com Postgres irmão usa CRM_DOCKER_DB_HOST', () => {
+    const env: NodeJS.ProcessEnv = {
+      CRM_WORKER_IN_DOCKER: '1',
+      CRM_DOCKER_DB_HOST: 'crm-postgres',
+      DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/crm',
+      REDIS_URL: 'redis://127.0.0.1:6380',
+    };
+    applyDockerWorkerEnv(env);
+    expect(env.DATABASE_URL).toBe('postgresql://u:p@crm-postgres:5432/crm');
   });
 });

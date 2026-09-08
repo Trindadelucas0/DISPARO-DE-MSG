@@ -1,3 +1,5 @@
+import { parsePhone } from '@/lib/validation/phone';
+
 /**
  * Regras puras de inbound WhatsApp. Testáveis sem Baileys e sem Prisma.
  */
@@ -16,6 +18,11 @@ export function normalizeInboundPhone(raw: string): string {
   const digits = withoutDevice.replace(/\D/g, '');
   if (digits.startsWith('55') && digits.length >= 12) return digits.slice(2);
   return digits;
+}
+
+/** Só grava conversa com telefone BR válido (10/11 dígitos). JID @lid sem número cai fora. */
+export function inboundStoredPhone(raw: string): string | null {
+  return parsePhone(raw)?.digits ?? parsePhone(normalizeInboundPhone(raw))?.digits ?? null;
 }
 
 export function isLidJid(jid: string): boolean {

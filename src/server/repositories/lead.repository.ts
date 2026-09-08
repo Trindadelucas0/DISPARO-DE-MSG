@@ -120,6 +120,9 @@ export function buildLeadWhere(
   }
 
   if (filters.tag) and.push({ tags: { some: { tag: { name: filters.tag } } } });
+  if (filters.campaignId) {
+    and.push({ campaignRecipients: { some: { campaignId: filters.campaignId } } });
+  }
 
   if (filters.situacao !== 'all') and.push({ situacaoCadastral: filters.situacao });
 
@@ -175,6 +178,28 @@ export async function findLeadPage(
   ]);
 
   return { rows: await attachLastInteraction(rows), total };
+}
+
+/**
+ * IDs do recorte atual, na mesma ordem da listagem, com teto. `matched` é o
+ * total sem o teto — a UI avisa quando a operação não alcança o filtro inteiro.
+ */
+export async function findLeadIdsMatching(
+  filters: LeadFilters,
+  scope: Prisma.LeadWhereInput,
+  take: number,
+): Promise<{ ids: string[]; matched: number }> {
+  const where = await withLastResultFilter(buildLeadWhere(filters, scope), filters.lastResult);
+  const [rows, matched] = await prisma.$transaction([
+    prisma.lead.findMany({
+      where,
+      select: { id: true },
+      orderBy: buildOrderBy(filters),
+      take,
+    }),
+    prisma.lead.count({ where }),
+  ]);
+  return { ids: rows.map((row) => row.id), matched };
 }
 
 export async function countLeads(where: Prisma.LeadWhereInput): Promise<number> {
@@ -253,7 +278,7 @@ function shapeFacet<T extends { _count: { _all: number } }>(
 
 /** Valores distintos para os seletores de filtro. Vem do banco, não do cliente. */
 export async function findLeadFacets(scope: Prisma.LeadWhereInput) {
-  const [states, cities, segments, sources, portes, responsaveis, tags] = await Promise.all([
+  const [states, cities, segments, sources, portes, responsaveis, tags, campaigns] = await Promise.all([
     prisma.lead
       .groupBy({ by: ['estado'], where: scope, _count: { _all: true }, orderBy: { estado: 'asc' } })
       .then((rows) => shapeFacet(rows, (row) => row.estado)),
@@ -280,9 +305,14 @@ export async function findLeadFacets(scope: Prisma.LeadWhereInput) {
       orderBy: { name: 'asc' },
     }),
     prisma.tag.findMany({ select: { id: true, name: true, color: true }, orderBy: { name: 'asc' } }),
+    prisma.campaign.findMany({
+      select: { id: true, name: true },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    }),
   ]);
 
-  return { states, cities, segments, sources, portes, responsaveis, tags };
+  return { states, cities, segments, sources, portes, responsaveis, tags, campaigns };
 }
 
 export async function countLeadsBySituacao(scope: Prisma.LeadWhereInput): Promise<FacetOption[]> {
@@ -501,6 +531,15 @@ export async function fillLeadWhatsappIfEmpty(id: string, whatsapp: string): Pro
   await prisma.lead.updateMany({
     where: { id, OR: [{ whatsapp: null }, { whatsapp: '' }] },
     data: { whatsapp },
+  });
+}
+
+/** Promise pronto para `$transaction`: o dono da conversa vira responsável do lead. */
+export function connectLeadOwner(leadId: string, userId: string) {
+  return prisma.lead.update({
+    where: { id: leadId },
+    data: { responsavel: { connect: { id: userId } } },
+    select: { id: true },
   });
 }
 

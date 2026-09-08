@@ -17,12 +17,14 @@ import { Button } from '@/components/ui/button';
 import { TableScroll } from '@/components/ui/table';
 import { isTypingTarget } from '@/constants/shortcuts';
 import { BulkBar } from '@/features/leads/bulk-bar';
+import { BULK_LIMIT } from '@/features/leads/bulk-schema';
 import { ManualContactForm } from '@/features/contacts/manual-contact-form';
 import { FilterBar } from '@/features/leads/filter-bar';
 import { LEAD_COLUMN_WIDTHS } from '@/features/leads/columns';
 import { LeadDrawer } from '@/features/leads/lead-drawer';
 import { LeadsTable } from '@/features/leads/leads-table';
 import { Pagination } from '@/features/leads/pagination';
+import { LEAD_SORT_LABELS, leadFilterSelectionKey } from '@/features/leads/filter-model';
 import { useLeadFilters } from '@/features/leads/use-lead-filters';
 import { useCreateManualLead, useLeadFacets, useLeadList } from '@/features/leads/use-leads';
 import { ApiError, errorMessage } from '@/lib/api-client';
@@ -43,6 +45,7 @@ export function LeadsScreen({ role }: { role: Role }) {
   const createManual = useCreateManualLead();
 
   const [selected, setSelected] = React.useState<ReadonlySet<string>>(new Set());
+  const [matchFilter, setMatchFilter] = React.useState(false);
   const [focusedIndex, setFocusedIndex] = React.useState(-1);
   const [drawerId, setDrawerId] = React.useState<string | null>(null);
   const [focusNextAction, setFocusNextAction] = React.useState(false);
@@ -51,31 +54,54 @@ export function LeadsScreen({ role }: { role: Role }) {
   // Memo para o array não trocar de identidade a cada render: os atalhos de
   // teclado e o "selecionar todos" dependem dele.
   const rows = React.useMemo(() => list.data?.rows ?? [], [list.data]);
+  const filterKey = React.useMemo(() => leadFilterSelectionKey(filters), [filters]);
 
-  // Trocar de página ou de filtro invalida a seleção: agir em lote sobre linhas
-  // que saíram da tela seria uma ação cega.
+  // Trocar o recorte invalida a seleção. Paginar no modo filtro não zera:
+  // o servidor aplica o filtro, não a página visível.
   React.useEffect(() => {
     setSelected(new Set());
+    setMatchFilter(false);
     setFocusedIndex(-1);
-  }, [filters]);
+  }, [filterKey]);
 
-  const toggleRow = React.useCallback((id: string) => {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const toggleRow = React.useCallback(
+    (id: string) => {
+      if (matchFilter) {
+        setMatchFilter(false);
+        setSelected(new Set(rows.map((row) => row.id).filter((rowId) => rowId !== id)));
+        return;
+      }
+      setSelected((current) => {
+        const next = new Set(current);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    },
+    [matchFilter, rows],
+  );
 
   const toggleAll = React.useCallback(() => {
+    if (matchFilter) {
+      setMatchFilter(false);
+      setSelected(new Set());
+      return;
+    }
     setSelected((current) => {
       const allSelected = rows.length > 0 && rows.every((row) => current.has(row.id));
       return allSelected ? new Set() : new Set(rows.map((row) => row.id));
     });
-  }, [rows]);
+  }, [matchFilter, rows]);
 
-  const clearSelection = React.useCallback(() => setSelected(new Set()), []);
+  const clearSelection = React.useCallback(() => {
+    setSelected(new Set());
+    setMatchFilter(false);
+  }, []);
+
+  const selectMatchingFilter = React.useCallback(() => {
+    setMatchFilter(true);
+    setSelected(new Set());
+  }, []);
 
   // Atalhos de linha (regra ux-ui-crm §6). Não disparam com foco em campo.
   React.useEffect(() => {
@@ -130,8 +156,15 @@ export function LeadsScreen({ role }: { role: Role }) {
   }, [focusedIndex, router, rows, toggleRow]);
 
   const selectedIds = React.useMemo(() => [...selected], [selected]);
+  const visualSelected = React.useMemo(
+    () => (matchFilter ? new Set(rows.map((row) => row.id)) : selected),
+    [matchFilter, rows, selected],
+  );
   const hidden = list.data?.hiddenBySituacao ?? [];
   const hiddenTotal = hidden.reduce((total, entry) => total + entry.count, 0);
+  const matchTotal = list.data?.total ?? 0;
+  const matchCount = Math.min(matchTotal, BULK_LIMIT);
+  const showMatchBanner = rows.length > 0;
 
   return (
     <>
@@ -190,6 +223,37 @@ export function LeadsScreen({ role }: { role: Role }) {
         </div>
       ) : null}
 
+      {showMatchBanner ? (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-subtle px-4 py-1.5">
+          {matchFilter ? (
+            <>
+              <span className="numeric text-xs text-muted-foreground">
+                {formatInteger(matchCount)} do filtro atual selecionados
+                {matchTotal > BULK_LIMIT
+                  ? ` (há ${formatInteger(matchTotal)}; entram os primeiros ${formatInteger(BULK_LIMIT)} na ordem ${LEAD_SORT_LABELS[filters.sort]}).`
+                  : '.'}
+              </span>
+              <Button variant="ghost" size="sm" onClick={clearSelection} className="h-6">
+                Limpar seleção
+              </Button>
+            </>
+          ) : (
+            <>
+              <span className="numeric text-xs text-muted-foreground">
+                {formatInteger(rows.length)} desta página.
+              </span>
+              <Button variant="ghost" size="sm" onClick={selectMatchingFilter} className="h-6">
+                Selecionar os{' '}
+                <span className="numeric">{formatInteger(matchCount)}</span> do filtro atual
+                {matchTotal > BULK_LIMIT ? (
+                  <span className="numeric"> (máx. {formatInteger(BULK_LIMIT)})</span>
+                ) : null}
+              </Button>
+            </>
+          )}
+        </div>
+      ) : null}
+
       <TableScroll>
         {list.isPending ? (
           <TableSkeleton rows={16} widths={LEAD_COLUMN_WIDTHS} />
@@ -230,7 +294,7 @@ export function LeadsScreen({ role }: { role: Role }) {
         ) : (
           <LeadsTable
             rows={rows}
-            selected={selected}
+            selected={visualSelected}
             focusedIndex={focusedIndex}
             sort={filters.sort}
             dir={filters.dir}
@@ -262,9 +326,12 @@ export function LeadsScreen({ role }: { role: Role }) {
         />
       ) : null}
 
-      {selectedIds.length > 0 ? (
+      {matchFilter || selectedIds.length > 0 ? (
         <BulkBar
           selectedIds={selectedIds}
+          matchFilter={matchFilter}
+          matchTotal={matchTotal}
+          filters={filters}
           facets={facets.data}
           canReassign={role === 'ADMIN' || role === 'MANAGER'}
           canCreateCampaign={role === 'ADMIN' || role === 'MANAGER'}

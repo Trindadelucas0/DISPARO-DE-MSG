@@ -1,6 +1,7 @@
 'use client';
 
 import { ArrowDown, ArrowUp, ArrowUpDown, Filter, Search, Settings2, X } from 'lucide-react';
+import type { LeadStatus } from '@prisma/client';
 import * as React from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -195,6 +196,26 @@ export function LeadFiltersPopover({
             />
 
             <div className="flex flex-col gap-1">
+              <Label>Campanha</Label>
+              <Select
+                value={toSelectValue(filters.campaignId)}
+                onValueChange={(next) => onChange({ campaignId: fromSelectValue(next) })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Todas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ANY}>Todas</SelectItem>
+                  {(facets?.campaigns ?? []).map((campaign) => (
+                    <SelectItem key={campaign.id} value={campaign.id}>
+                      {campaign.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col gap-1">
               <Label>Tag</Label>
               <Select
                 value={toSelectValue(filters.tag)}
@@ -304,11 +325,13 @@ function FilterMenu({
   facets,
   onChange,
   hideResponsible = false,
+  statusOptions = LEAD_STATUS_ORDER,
 }: {
   filters: LeadFilters;
   facets: LeadFacets | undefined;
   onChange: (patch: Partial<LeadFilters>) => void;
   hideResponsible?: boolean;
+  statusOptions?: readonly LeadStatus[];
 }) {
   return (
     <DropdownMenu>
@@ -322,7 +345,7 @@ function FilterMenu({
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>Status</DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
-            {LEAD_STATUS_ORDER.map((status) => (
+            {statusOptions.map((status) => (
               <DropdownMenuItem key={status} onSelect={() => onChange({ status })}>
                 {leadStatusLabel(status)}
               </DropdownMenuItem>
@@ -354,6 +377,33 @@ function FilterMenu({
             </DropdownMenuSubContent>
           </DropdownMenuSub>
         )}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>Campanha</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="max-h-72 overflow-y-auto">
+            {(facets?.campaigns ?? []).length === 0 ? (
+              <DropdownMenuItem disabled>Nenhuma campanha</DropdownMenuItem>
+            ) : (
+              (facets?.campaigns ?? []).map((campaign) => (
+                <DropdownMenuItem
+                  key={campaign.id}
+                  onSelect={() => onChange({ campaignId: campaign.id })}
+                >
+                  {campaign.name}
+                </DropdownMenuItem>
+              ))
+            )}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>Cidade</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="max-h-72 overflow-y-auto">
+            {(facets?.cities ?? []).map((option) => (
+              <DropdownMenuItem key={option.value} onSelect={() => onChange({ city: option.value })}>
+                {option.value} ({option.count})
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>Última interação</DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
@@ -421,6 +471,7 @@ export function FilterBar({
   showSearch = true,
   hideResponsible = false,
   searchPlaceholder = 'Nome, WhatsApp ou CNPJ',
+  statusOptions = LEAD_STATUS_ORDER,
   className,
 }: {
   filters: LeadFilters;
@@ -432,6 +483,7 @@ export function FilterBar({
   showSearch?: boolean;
   hideResponsible?: boolean;
   searchPlaceholder?: string;
+  statusOptions?: readonly LeadStatus[];
   className?: string;
 }) {
   const [searchDraft, setSearchDraft] = React.useState(filters.search ?? '');
@@ -503,6 +555,7 @@ export function FilterBar({
           facets={facets}
           onChange={onChange}
           hideResponsible={hideResponsible}
+          statusOptions={statusOptions}
         />
         <SortMenu filters={filters} onChange={onChange} />
         <LeadFiltersPopover
@@ -531,6 +584,10 @@ export function FilterBar({
               }
               if (key === 'ids') {
                 onChange({ ids: undefined });
+                return;
+              }
+              if (key === 'campaignId') {
+                onChange({ campaignId: undefined });
                 return;
               }
               onChange({ [key]: undefined });

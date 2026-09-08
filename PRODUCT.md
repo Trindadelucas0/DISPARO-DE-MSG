@@ -70,9 +70,10 @@ Confirmado:
 
 Restrições técnicas:
 
-- O PostgreSQL deste deploy é o container `crm-postgres` (Compose), publicado em `127.0.0.1:5432`,
-  banco `crm_prospeccao`.
-- O Redis sobe em `127.0.0.1:6379` como `crm-redis`. Não exponha 5432/6379/3001 na internet.
+- O PostgreSQL é nativo na 5432 e compartilhado com outros bancos da máquina; as migrations tocam apenas
+  o schema `public` do banco `crm_prospeccao`.
+- As portas 6379 e 5433 pertencem a containers de outro projeto (`samuel-redis`, `samuel-postgres`) e não
+  podem ser tocadas. O Redis do CRM sobe em `127.0.0.1:6380` como `crm-redis`.
 - O job de importação roda no processo do Next. Se o servidor reiniciar no meio, o job é retomado pelo
   offset gravado em `ImportJob`.
 

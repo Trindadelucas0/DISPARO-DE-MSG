@@ -1,6 +1,6 @@
 import { Prisma, type InteractionResult, type LeadStatus } from '@prisma/client';
 
-import type { BulkLeadInput, BulkLeadResult } from '@/features/leads/bulk-schema';
+import { BULK_LIMIT, type BulkLeadInput, type BulkLeadResult } from '@/features/leads/bulk-schema';
 import type { LeadFilters, LeadUpdateInput, ManualLeadInput } from '@/features/leads/schema';
 import { MANUAL_LEAD_SOURCE, manualLeadSchema } from '@/features/leads/schema';
 import { CACHE_TAGS, CACHE_TTL, cacheKey, filterHash, getOrSet } from '@/lib/cache';
@@ -21,6 +21,7 @@ import {
   findLeadById,
   findLeadByWhatsappDigits,
   findLeadFacets,
+  findLeadIdsMatching,
   findLeadPage,
   findTagById,
   removeTagsFromLeads,
@@ -255,6 +256,9 @@ export async function patchLead(
  * O recorte por papel vai no `where`, então um USER que enviar id de lead de
  * outro vendedor simplesmente não atualiza aquele registro — e o resultado
  * informa quantos ficaram de fora, em vez de fingir sucesso total.
+ *
+ * Com `filters`, os IDs vêm do banco no momento do POST — o cliente não escolhe
+ * a lista. Teto igual ao lote por ids.
  */
 export async function bulkUpdateLeads(
   user: SessionUser,
@@ -270,7 +274,22 @@ export async function bulkUpdateLeads(
   if (input.status !== undefined) data.status = input.status;
   if (input.responsavelId !== undefined) data.responsavelId = input.responsavelId;
 
-  const updated = await updateManyLeads(input.ids, leadScopeWhere(user), data);
+  const scope = leadScopeWhere(user);
+  let ids: string[];
+  let matched: number;
+  let capped = false;
+
+  if (input.filters) {
+    const found = await findLeadIdsMatching(input.filters, scope, BULK_LIMIT);
+    ids = found.ids;
+    matched = found.matched;
+    capped = found.matched > BULK_LIMIT;
+  } else {
+    ids = [...(input.ids ?? [])];
+    matched = ids.length;
+  }
+
+  const updated = ids.length === 0 ? 0 : await updateManyLeads(ids, scope, data);
 
   await recordAudit({
     userId: user.id,
@@ -278,8 +297,22 @@ export async function bulkUpdateLeads(
     entity: 'Lead',
     entityId: null,
     changes: {
-      ids: input.ids,
-      requested: input.ids.length,
+      ids: input.filters ? undefined : ids,
+      filters: input.filters
+        ? {
+            city: input.filters.city ?? null,
+            campaignId: input.filters.campaignId ?? null,
+            status: input.filters.status ?? null,
+            responsible: input.filters.responsible ?? null,
+            state: input.filters.state ?? null,
+            search: input.filters.search ?? null,
+            sort: input.filters.sort,
+            dir: input.filters.dir,
+          }
+        : undefined,
+      requested: ids.length,
+      matched,
+      capped,
       updated,
       status: input.status ?? null,
       responsavelId: input.responsavelId ?? null,
@@ -294,7 +327,7 @@ export async function bulkUpdateLeads(
     entityId: null,
   });
 
-  return { updated, skipped: input.ids.length - updated };
+  return { updated, skipped: ids.length - updated, matched, capped };
 }
 
 export interface LeadFacets {
@@ -305,6 +338,7 @@ export interface LeadFacets {
   readonly portes: { value: string; count: number }[];
   readonly responsaveis: { id: string; name: string }[];
   readonly tags: { id: string; name: string; color: string }[];
+  readonly campaigns: { id: string; name: string }[];
 }
 
 export async function getLeadFacets(user: SessionUser): Promise<LeadFacets> {
@@ -325,9 +359,10 @@ export async function getLeadFacets(user: SessionUser): Promise<LeadFacets> {
         portes: raw.portes,
         responsaveis: raw.responsaveis,
         tags: raw.tags,
+        campaigns: raw.campaigns,
       };
     },
-    { tags: [CACHE_TAGS.leads, CACHE_TAGS.tags] },
+    { tags: [CACHE_TAGS.leads, CACHE_TAGS.tags, CACHE_TAGS.campaigns] },
   );
 }
 
@@ -366,7 +401,12 @@ export async function bulkTagLeads(
     entityId: null,
   });
 
-  return { updated: affected, skipped: input.ids.length - affected };
+  return {
+    updated: affected,
+    skipped: input.ids.length - affected,
+    matched: input.ids.length,
+    capped: false,
+  };
 }
 
 export async function bulkScheduleFollowUps(
@@ -411,7 +451,12 @@ export async function bulkScheduleFollowUps(
     entityId: null,
   });
 
-  return { updated: created, skipped: input.ids.length - leads.length };
+  return {
+    updated: created,
+    skipped: input.ids.length - leads.length,
+    matched: input.ids.length,
+    capped: false,
+  };
 }
 
 export { manualLeadSchema, type ManualLeadInput };
@@ -438,7 +483,7 @@ function serializeManualLead(
 export async function createManualLead(
   user: SessionUser,
   input: ManualLeadInput,
-  options?: { origem?: string; status?: LeadStatus },
+  options?: { origem?: string; status?: LeadStatus; responsavelId?: string },
 ) {
   assertStaff(user);
   const name = input.name.trim();
@@ -507,7 +552,7 @@ export async function createManualLead(
       phones: phones.phones,
       origem,
       status,
-      responsavelId: user.id,
+      responsavelId: options?.responsavelId ?? user.id,
       situacaoCadastral: 'ATIVA',
     });
 

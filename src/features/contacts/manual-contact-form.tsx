@@ -82,7 +82,7 @@ export function ManualContactForm({
           className={layout === 'row' ? 'w-44' : 'w-full'}
         />
       </div>
-      <Button size="sm" variant="primary" type="submit" disabled={!canSubmit} loading={pending}>
+      <Button size="sm" variant="primary" type="submit" disabled={!canSubmit || pending} loading={pending}>
         {submitLabel}
       </Button>
     </form>
