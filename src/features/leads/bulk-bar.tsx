@@ -1,6 +1,6 @@
 'use client';
 
-import { LeadStatus } from '@prisma/client';
+import type { LeadStatus } from '@prisma/client';
 import { X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
