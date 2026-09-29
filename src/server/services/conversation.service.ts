@@ -31,6 +31,7 @@ import { BadRequestError, NotFoundError } from '@/server/api-handler';
 import { buildLeadTemplateVars } from '@/server/queue/campaign-helpers';
 import {
   createOutboundMessage,
+  deleteConversation,
   findConversationById,
   findConversationPage,
   findOpenConversationForLeadAccount,
@@ -944,6 +945,28 @@ export async function reopenConversation(user: SessionUser, id: string) {
     entityId: id,
   });
   return getConversation(user, id);
+}
+
+/** Apaga só no CRM. O lead e o WhatsApp do contato permanecem. */
+export async function removeConversation(user: SessionUser, id: string) {
+  const conversation = await getConversation(user, id);
+  if (!canWriteConversation(user, conversation)) {
+    throw new ForbiddenError('Você não pode excluir esta conversa.');
+  }
+  await deleteConversation(id);
+  await recordAudit({
+    userId: user.id,
+    action: 'conversation.delete',
+    entity: 'Conversation',
+    entityId: id,
+    changes: { leadId: conversation.leadId, assignedUserId: conversation.assignedUserId },
+  });
+  await notifyChange({
+    type: 'conversation.delete',
+    tags: MUTATION_TAGS.conversation,
+    entityId: id,
+  });
+  return { ok: true };
 }
 
 export async function changeConversationLeadStatus(

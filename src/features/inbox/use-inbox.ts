@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { InboxFilter } from '@/constants/conversation';
 import { invalidateClientTags } from '@/features/events/invalidate-client';
-import { apiGet, apiPatch, apiPost } from '@/lib/api-client';
+import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api-client';
 import type { SerializedConversation } from '@/server/services/conversation.service';
 import type { SerializedMedia } from '@/server/services/media.service';
 
@@ -147,5 +147,23 @@ export function useInboxActions(conversationId: string | null) {
     },
   });
 
-  return { send, take, transfer, resolve, reopen, markRead, attachContact, changeLeadStatus };
+  const remove = useMutation({
+    mutationFn: () => apiDelete<{ ok: true }>(`/api/conversations/${id}`),
+    // Só a lista: invalidar o detalhe da id apagada refaria o GET e mostraria 404 antes de sair da tela.
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['conversations', 'list'] });
+    },
+  });
+
+  return {
+    send,
+    take,
+    transfer,
+    resolve,
+    reopen,
+    markRead,
+    attachContact,
+    changeLeadStatus,
+    remove,
+  };
 }

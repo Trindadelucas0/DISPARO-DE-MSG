@@ -5,6 +5,7 @@ import { handleApi } from '@/server/api-handler';
 import {
   getConversation,
   markConversationRead,
+  removeConversation,
 } from '@/server/services/conversation.service';
 
 export const runtime = 'nodejs';
@@ -25,5 +26,13 @@ export async function PATCH(_request: NextRequest, context: { params: Promise<{ 
     const user = await requireSession();
     const { id } = await context.params;
     return markConversationRead(user, id);
+  });
+}
+
+export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  return handleApi(async () => {
+    const user = await requireSession();
+    const { id } = await context.params;
+    return removeConversation(user, id);
   });
 }

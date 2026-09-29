@@ -19,9 +19,9 @@ continua sendo a fonte de regra, campo e path de código. Tutorial para o client
 [`docs/como-usar-o-sistema.md`](docs/como-usar-o-sistema.md)
 (guia visual: wireframe ASCII por tela e passos “clique aqui”; linguagem do dia a dia).
 
-- Versão: 0.16.18 — Uma fonte
+- Versão: 0.16.19 — Excluir conversa na Inbox
 - Fases entregues: 1 a 9 (MVP) + restyle 0.11.0 + identidade 0.12.0 + atendimento 0.13.0 + retorno 0.14.0
-- Última atualização: 08/09/2026 — Uma fonte: CRM = disparo. Deploy VPS (`deploy/`, `docker-compose.vps.yml`) vive em `CRM/`. GitHub `DISPARO-DE-MSG` recebe o mesmo código via `npm run publish:github`. `npm start` escuta `127.0.0.1:3001`.
+- Última atualização: 29/09/2026 — Excluir conversa na Inbox (`DELETE /api/conversations/:id`). Antes, 0.16.18 — Uma fonte: CRM = disparo. Deploy VPS (`deploy/`, `docker-compose.vps.yml`) vive em `CRM/`. GitHub `DISPARO-DE-MSG` recebe o mesmo código via `npm run publish:github`. `npm start` escuta `127.0.0.1:3001`.
 
 ---
 
@@ -538,6 +538,15 @@ no Kanban; Contatado em diante sim. Sem permissão o select explica:
 “Assuma a conversa para alterar o funil.”
 Atalhos: `j`/`k`, `r` responder, `a` assumir, `t` transferir, `c` resolver.
 
+**Excluir** (cabeçalho da conversa, sem atalho) segue `canWriteConversation`: ADMIN/MANAGER e o
+USER responsável. Abre confirmação com o nome da empresa (USER sem lead vê “Conversa”; staff vê o
+telefone). Confirmar apaga a linha em `conversations`; `messages`, `conversation_assignments` e
+`conversation_user_restrictions` saem por cascade. `Lead`, funil, responsável, campanha e
+`MediaAsset` permanecem. Nada é apagado no WhatsApp do contato. A tela volta para `/inbox`.
+Mensagem nova do mesmo número abre outra conversa (`processWhatsappInboundJob`); o histórico
+apagado não volta. Supervisão deixa de contar as mensagens apagadas. Auditoria:
+`conversation.delete`.
+
 USER só lista conversa com `assignedUserId` dele. **Não vê telefone** (API devolve `phone: null`).
 Não vê fila sem dono, não vê conversa de outro vendedor, não transfere, não salva contato,
 não abre a ficha do lead. Responde e move o funil. ADMIN/MANAGER vê tudo, transfere e vê o número.
@@ -556,6 +565,7 @@ JID `@lid` sem número não vira conversa.
 | Mensagens | `GET/POST .../messages` |
 | Mídia | `POST /api/media`, `GET /api/media/:id` |
 | Assumir / transferir / resolver / reabrir | `POST .../take\|transfer\|resolve\|reopen` |
+| Excluir conversa | `DELETE /api/conversations/:id` — 404 fora do escopo, 403 sem `canWriteConversation` |
 | Funil do lead | `PATCH .../lead-status` |
 | Ligar contato (conversa sem lead) | `POST .../contact` |
 
@@ -825,6 +835,9 @@ Religar / atualizar: runbook em [`README.md`](README.md) (`git pull`, `migrate d
 
 HTTPS (Let's Encrypt) **não** está neste ambiente. Senha root e `.env` não entram neste arquivo.
 
+Resultado na entrega 0.16.19 — **Excluir conversa na Inbox**: botão **Excluir** no cabeçalho
+da conversa, confirmação com o nome, `DELETE /api/conversations/:id` (quem escreve na conversa).
+Apaga conversa e mensagens no CRM; lead e WhatsApp do contato permanecem.
 Resultado na entrega 0.16.18 — **Uma fonte**: CRM e disparo são o mesmo código. `deploy/`,
 `docker-compose.vps.yml` e o runbook vivem em `CRM/`. Publicar no GitHub:
 `npm run publish:github` (não editar `DISPARO DE MSG/` à mão). `npm start` e PM2 escutam

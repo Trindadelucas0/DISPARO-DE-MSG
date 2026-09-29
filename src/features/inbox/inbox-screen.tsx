@@ -11,6 +11,14 @@ import { PageHeader } from '@/components/shell/app-shell';
 import { ConversationBadge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState, ErrorState, TableSkeleton } from '@/components/ui/data-state';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input, Textarea } from '@/components/ui/input';
 import { Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/primitives';
 import { PropertyRow } from '@/components/ui/property-row';
@@ -53,6 +61,7 @@ export function InboxScreen({ conversationId }: { conversationId?: string }) {
   const [pendingMedia, setPendingMedia] = React.useState<SerializedMedia | null>(null);
   const [recording, setRecording] = React.useState(false);
   const [transferUserId, setTransferUserId] = React.useState('');
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [users, setUsers] = React.useState<{ id: string; name: string }[]>([]);
   const replyRef = React.useRef<HTMLTextAreaElement>(null);
   const recorderRef = React.useRef<MediaRecorder | null>(null);
@@ -67,6 +76,7 @@ export function InboxScreen({ conversationId }: { conversationId?: string }) {
   React.useEffect(() => {
     setDraft('');
     setPendingMedia(null);
+    setConfirmDelete(false);
     setRecording(false);
     recorderRef.current?.stop();
   }, [conversationId]);
@@ -119,6 +129,24 @@ export function InboxScreen({ conversationId }: { conversationId?: string }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [actions.take, actions.resolve, conversationId, isSeller, list.data?.rows, router]);
+
+  const conversationName = detail.data
+    ? (detail.data.lead?.razaoSocial ?? (isSeller ? 'Conversa' : formatPhone(detail.data.phone)))
+    : '';
+
+  const deleteConversation = () => {
+    actions.remove.mutate(undefined, {
+      onSuccess: () => {
+        setConfirmDelete(false);
+        router.push('/inbox');
+        toast.success('Conversa excluída.');
+      },
+      onError: (error) => {
+        setConfirmDelete(false);
+        toast.error(errorMessage(error));
+      },
+    });
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -283,6 +311,14 @@ export function InboxScreen({ conversationId }: { conversationId?: string }) {
                     Reabrir
                   </Button>
                 ) : null}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!detail.data.canWrite}
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  Excluir
+                </Button>
               </div>
               <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
                 {messages.isLoading ? (
@@ -625,6 +661,31 @@ export function InboxScreen({ conversationId }: { conversationId?: string }) {
           )}
         </aside>
       </div>
+
+      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir conversa</DialogTitle>
+            <DialogDescription>
+              Excluir a conversa {conversationName}? As mensagens saem desta Inbox. O lead e o
+              WhatsApp do contato não são apagados. Esta ação não tem volta.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setConfirmDelete(false)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              loading={actions.remove.isPending}
+              onClick={deleteConversation}
+            >
+              Excluir {conversationName}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -372,6 +372,7 @@ Cem contatos levam cerca de **20 minutos** nesse ritmo. Mensagem avulsa no lead 
 |            |  [ Em atendimento ] [ Aguardando ] [ Resolvidas ]     |
 |            |  ----------------+------------------+---------------  |
 |            |  lista           |  [ Assumir ] [ Resolver ] [ Reabrir]
+|            |                  |  [ Excluir ]                        |
 |            |                  |  [ Transferir para… ] [ Transferir ]
 |            |                  |  [ Responder… ]                    |
 |            |                  |  Anexar foto / vídeo / gravar      |
@@ -395,6 +396,7 @@ O Vendedor **não** vê o filtro **Sem responsável**. A busca dele é **Buscar 
 7. À direita, em **Funil**, escolha Novo, Contatado, Qualificado… Isso mexe no Kanban na hora.
 8. Terminou? Clique em **Resolver**. Precisou voltar? Clique em **Reabrir**.
 9. **Abrir lead** (só Admin/Gestor) abre a ficha. **Kanban** abre o quadro.
+10. Para tirar a conversa da Inbox: clique em **Excluir**, confira o nome e clique em **Excluir (nome)**. A conversa e as mensagens somem do CRM e você volta para a lista. A empresa continua na base e no **Kanban**. No celular do cliente nada é apagado. Se ele mandar mensagem de novo, aparece uma conversa nova, sem o histórico antigo.
 
 Disparo de campanha e **Enviar** no lead passam Novo/Pronto para **Contatado** sozinhos. Qualificado e Perdido você escolhe no **Funil**.
 
@@ -405,6 +407,7 @@ Disparo de campanha e **Enviar** no lead passam Novo/Pronto para **Contatado** s
 3. Responda e clique em **Enviar**.
 4. À direita, mude o **Funil** se a empresa avançou.
 5. Clique em **Resolver** quando acabar.
+6. Para tirar a conversa da sua Inbox: clique em **Excluir** e confirme. A empresa continua no seu **Kanban**. Não tem volta.
 
 Se a lista estiver vazia: peça ao Gestor para **Transferir** uma conversa para você, ou espere a campanha cair na sua conta. Você **não** vê a fila **Sem responsável**.
 

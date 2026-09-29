@@ -130,6 +130,11 @@ export async function findOpenConversationForCampaign(
   });
 }
 
+/** Mensagens, atribuições e restrições saem por `onDelete: Cascade` no schema. */
+export async function deleteConversation(id: string) {
+  await prisma.conversation.delete({ where: { id } });
+}
+
 export async function listMessages(conversationId: string) {
   return prisma.message.findMany({
     where: { conversationId },
