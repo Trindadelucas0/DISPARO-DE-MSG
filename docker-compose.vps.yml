@@ -21,7 +21,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
       POSTGRES_DB: ${POSTGRES_DB:-crm_prospeccao}
     ports:
-      - '127.0.0.1:5432:5432'
+      - '127.0.0.1:15432:5432'
     volumes:
       - crm_pg_data:/var/lib/postgresql/data
     healthcheck:
