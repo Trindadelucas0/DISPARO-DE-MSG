@@ -50,6 +50,7 @@ import {
 } from '@/features/campaigns/use-campaigns';
 import { useLeadFacets } from '@/features/leads/use-leads';
 import { errorMessage } from '@/lib/api-client';
+import { CampaignAutoReplySection } from '@/features/campaigns/campaign-auto-reply-section';
 import { dash, formatCnpj, formatDateTime, formatPhone } from '@/lib/format';
 
 function parseRecipientLimit(value: string): number | null {
@@ -60,8 +61,18 @@ function parseRecipientLimit(value: string): number | null {
   return parsed;
 }
 
-function willReceiveCount(withWhatsapp: number, optOut: number, excludeOptOut: boolean, limit: number | null) {
-  const eligible = Math.max(0, withWhatsapp - (excludeOptOut ? optOut : 0));
+/**
+ * Conta NÚMEROS, não leads: o mesmo WhatsApp em dois leads recebe uma mensagem
+ * só. É a mesma regra que `selectRecipients` aplica no disparo, então o número
+ * prometido aqui é o que a campanha vai criar.
+ */
+function willReceiveCount(
+  uniqueWhatsapp: number,
+  optOut: number,
+  excludeOptOut: boolean,
+  limit: number | null,
+) {
+  const eligible = Math.max(0, uniqueWhatsapp - (excludeOptOut ? optOut : 0));
   if (limit == null) return eligible;
   return Math.min(eligible, limit);
 }
@@ -163,7 +174,7 @@ export function CampaignDetailScreen({ id }: { id: string }) {
   const sendableAccounts = (accountsQuery.data ?? []).filter(isConnectedSendableAccount);
   const willReceive = audience.data
     ? willReceiveCount(
-        audience.data.withWhatsapp,
+        audience.data.uniqueWhatsapp,
         audience.data.optOut,
         excludeOptOut,
         parsedLimit,
@@ -425,6 +436,7 @@ export function CampaignDetailScreen({ id }: { id: string }) {
       </PageHeader>
 
       <div className="min-h-0 flex-1 overflow-auto p-4">
+        <CampaignAutoReplySection campaignId={id} templates={templates.data ?? []} />
         {row.status !== 'DRAFT' ? (
           <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-6">
             {(
@@ -530,12 +542,15 @@ export function CampaignDetailScreen({ id }: { id: string }) {
                 />
               ) : audience.data ? (
                 <>
-                  <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+                  <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
                     <PropertyRow label="Encontrados" numeric>
                       {audience.data.found}
                     </PropertyRow>
                     <PropertyRow label="Com WhatsApp" numeric>
                       {audience.data.withWhatsapp}
+                    </PropertyRow>
+                    <PropertyRow label="Números únicos" numeric>
+                      {audience.data.uniqueWhatsapp}
                     </PropertyRow>
                     <PropertyRow label="Sem WhatsApp" numeric>
                       {audience.data.withoutWhatsapp}

@@ -37,7 +37,36 @@ export const campaignKeys = {
   audience: (filters: LeadFilters, excludeOptOut: boolean) =>
     ['campaigns', 'audience', filters, excludeOptOut] as const,
   accounts: () => ['whatsapp', 'accounts', 'campaign'] as const,
+  autoReply: (id: string) => ['campaigns', 'auto-reply', id] as const,
 };
+
+export type AutoReplyResponse = { templateId: string | null; body: string | null };
+export type AutoReplyRule = {
+  id?: string;
+  matchMode: 'EQUALS' | 'CONTAINS' | 'ANY_OF';
+  matchValues: string[];
+  response: AutoReplyResponse;
+};
+export type AutoReplyConfig = {
+  enabled: boolean;
+  fallback: AutoReplyResponse;
+  rules: AutoReplyRule[];
+};
+
+export function useCampaignAutoReply(id: string) {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: campaignKeys.autoReply(id),
+    queryFn: ({ signal }) => apiGet<AutoReplyConfig>(`/api/campaigns/${id}/auto-reply`, signal),
+    enabled: Boolean(id),
+  });
+  const save = useMutation({
+    mutationFn: (body: AutoReplyConfig) =>
+      apiPatch<AutoReplyConfig>(`/api/campaigns/${id}/auto-reply`, body),
+    onSuccess: (data) => queryClient.setQueryData(campaignKeys.autoReply(id), data),
+  });
+  return { query, save };
+}
 
 export function useCampaigns() {
   return useQuery({
@@ -82,6 +111,7 @@ export function useCampaignAudience(filters: LeadFilters, excludeOptOut: boolean
       apiGet<{
         found: number;
         withWhatsapp: number;
+        uniqueWhatsapp: number;
         withoutWhatsapp: number;
         optOut: number;
         sample: {

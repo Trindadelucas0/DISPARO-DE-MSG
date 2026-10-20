@@ -1,6 +1,7 @@
 import { ImportIssueSeverity, ImportJobStatus, Prisma } from '@prisma/client';
 
 import { CACHE_TAGS } from '@/lib/cache';
+import { looksLikeLegacyMobile } from '@/lib/contact-source';
 import { prisma } from '@/lib/db';
 import { notifyChange } from '@/lib/events';
 import {
@@ -71,6 +72,12 @@ export interface ImportPreview {
   readonly duplicatesInFile: readonly { cnpj: string; rows: readonly number[] }[];
   /** CNPJs que já existem no banco. */
   readonly existingInDatabase: number;
+  /** Dos válidos: quantos têm celular, só fixo, e nenhum telefone. */
+  readonly withWhatsapp: number;
+  readonly landlineOnly: number;
+  /** Dos sem celular: quantos têm fixo em formato de celular antigo. */
+  readonly landlineLegacyShape: number;
+  readonly withoutPhone: number;
   readonly situacaoBreakdown: readonly { situacao: string; count: number }[];
   readonly rows: readonly ImportPreviewRow[];
   /** Campos descartados em linhas que serão importadas. Não impedem a carga. */
@@ -82,6 +89,12 @@ export interface AnalyzeOptions {
   readonly onlyActive: boolean;
   readonly mappingOverride?: ColumnMapping;
   readonly origem: string;
+  /**
+   * CNPJ que já existe: preencher campo de contato VAZIO e acrescentar
+   * telefone ausente, sem apagar nada. Desligado por padrão — a tela /import
+   * continua só inserindo o que é novo.
+   */
+  readonly fillExistingContacts?: boolean;
 }
 
 interface AnalyzeResult {
@@ -193,17 +206,31 @@ function analyzeSheet(sheet: SheetData, options: AnalyzeOptions): AnalyzeResult 
   };
 }
 
+/**
+ * Quantos destes CNPJs já estão no banco.
+ *
+ * Em lotes: a lista empresarial tem 42 mil linhas e um `IN` único estoura o
+ * teto de 32.767 parâmetros do Postgres.
+ */
+async function countExistingCnpjs(cnpjs: readonly string[]): Promise<number> {
+  let total = 0;
+  for (let index = 0; index < cnpjs.length; index += CHUNK_SIZE) {
+    total += await prisma.lead.count({
+      where: { cnpj: { in: cnpjs.slice(index, index + CHUNK_SIZE) } },
+    });
+  }
+  return total;
+}
+
 export async function buildPreview(
   sheet: SheetData,
   options: AnalyzeOptions,
 ): Promise<ImportPreview> {
   const analysis = analyzeSheet(sheet, options);
 
-  const cnpjs = analysis.leads.map((entry) => entry.lead.cnpj);
-  const existingInDatabase =
-    cnpjs.length === 0
-      ? 0
-      : await prisma.lead.count({ where: { cnpj: { in: cnpjs } } });
+  const existingInDatabase = await countExistingCnpjs(
+    analysis.leads.map((entry) => entry.lead.cnpj),
+  );
 
   const errorsByRow = new Map<number, string[]>();
   for (const error of analysis.errors) {
@@ -244,6 +271,15 @@ export async function buildPreview(
     inactiveRows: analysis.inactiveRows,
     duplicatesInFile: analysis.duplicatesInFile,
     existingInDatabase,
+    withWhatsapp: analysis.leads.filter((entry) => entry.lead.whatsapp !== null).length,
+    landlineOnly: analysis.leads.filter(
+      (entry) => entry.lead.whatsapp === null && entry.lead.telefone !== null,
+    ).length,
+    landlineLegacyShape: analysis.leads.filter(
+      (entry) =>
+        entry.lead.whatsapp === null && entry.lead.phones.some((phone) => looksLikeLegacyMobile(phone)),
+    ).length,
+    withoutPhone: analysis.leads.filter((entry) => entry.lead.phones.length === 0).length,
     situacaoBreakdown: analysis.situacaoBreakdown,
     rows: [...previewRows, ...rejectedPreview],
     warnings: analysis.warnings.slice(0, 50),
@@ -292,6 +328,8 @@ export interface ImportRunResult {
   readonly totalRows: number;
   readonly processedRows: number;
   readonly insertedRows: number;
+  /** Leads que já existiam e receberam contato em campo que estava vazio. */
+  readonly updatedRows: number;
   readonly skippedRows: number;
   readonly failedRows: number;
   readonly duplicateRows: number;
@@ -302,6 +340,56 @@ export interface ImportRunResult {
 export interface RunImportOptions extends AnalyzeOptions {
   readonly jobId: string;
   readonly userId: string | null;
+}
+
+/** Campos de contato que o merge pode preencher quando estão vazios. */
+const CONTACT_FIELDS = ['telefone', 'whatsapp', 'email'] as const;
+
+/**
+ * Completa o contato de leads que JÁ existem, pelo CNPJ.
+ *
+ * Só escreve em campo vazio e só acrescenta telefone que ainda não está na
+ * lista. Nunca substitui valor existente e nunca remove telefone: o que está
+ * no banco pode ter vindo de uma conversa real, a planilha é a fonte mais
+ * fraca das duas.
+ *
+ * Rodar duas vezes não muda nada na segunda: sem campo vazio e sem telefone
+ * novo, não há update.
+ */
+async function fillExistingLeadContacts(
+  leads: readonly NormalizedLead[],
+): Promise<number> {
+  const byCnpj = new Map(leads.map((lead) => [lead.cnpj, lead]));
+  const cnpjs = [...byCnpj.keys()];
+  let updated = 0;
+
+  for (let index = 0; index < cnpjs.length; index += CHUNK_SIZE) {
+    const existing = await prisma.lead.findMany({
+      where: { cnpj: { in: cnpjs.slice(index, index + CHUNK_SIZE) } },
+      select: { id: true, cnpj: true, telefone: true, whatsapp: true, email: true, phones: true },
+    });
+
+    for (const row of existing) {
+      const incoming = byCnpj.get(row.cnpj);
+      if (!incoming) continue;
+
+      const data: Prisma.LeadUpdateInput = {};
+      for (const field of CONTACT_FIELDS) {
+        const current = row[field];
+        const next = incoming[field];
+        if ((current === null || current === '') && next) data[field] = next;
+      }
+
+      const missingPhones = incoming.phones.filter((phone) => !row.phones.includes(phone));
+      if (missingPhones.length > 0) data.phones = [...row.phones, ...missingPhones];
+
+      if (Object.keys(data).length === 0) continue;
+      await prisma.lead.update({ where: { id: row.id }, data });
+      updated += 1;
+    }
+  }
+
+  return updated;
 }
 
 /**
@@ -403,6 +491,10 @@ export async function runImport(
     });
   }
 
+  const updatedRows = options.fillExistingContacts
+    ? await fillExistingLeadContacts(analysis.leads.map((entry) => entry.lead))
+    : 0;
+
   const finished = await prisma.importJob.update({
     where: { id: options.jobId },
     data: {
@@ -426,6 +518,7 @@ export async function runImport(
       onlyActive: options.onlyActive,
       totalRows: sheet.rows.length,
       insertedRows,
+      updatedRows,
       failedRows: distinctFailedRows,
       warningRows: distinctWarningRows,
       inactiveRows: analysis.inactiveRows,
@@ -449,6 +542,7 @@ export async function runImport(
     totalRows: sheet.rows.length,
     processedRows: sheet.rows.length,
     insertedRows,
+    updatedRows,
     skippedRows: analysis.leads.length - insertedRows,
     failedRows: distinctFailedRows,
     duplicateRows: analysis.duplicatesInFile.reduce(

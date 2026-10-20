@@ -171,6 +171,12 @@ enum OptOutSource {
   LEAD
 }
 
+enum AutoReplyMatchMode {
+  EQUALS
+  CONTAINS
+  ANY_OF
+}
+
 // ---------------------------------------------------------------------------
 // Usuários e auditoria
 // ---------------------------------------------------------------------------
@@ -186,18 +192,18 @@ model User {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  leads         Lead[]          @relation("LeadResponsavel")
-  interactions  Interaction[]
-  followUps     FollowUp[]      @relation("FollowUpResponsavel")
-  createdFollow FollowUp[]      @relation("FollowUpCriador")
-  templates     MessageTemplate[]
-  auditLogs     AuditLog[]
-  importJobs    ImportJob[]
-  notifications Notification[]
-  campaignsCreated Campaign[] @relation("CampaignCreator")
-  conversationsAssigned Conversation[] @relation("ConversationAssignee")
-  conversationAssignments ConversationAssignment[]
-  routingRules RoutingRule[]
+  leads                    Lead[]                        @relation("LeadResponsavel")
+  interactions             Interaction[]
+  followUps                FollowUp[]                    @relation("FollowUpResponsavel")
+  createdFollow            FollowUp[]                    @relation("FollowUpCriador")
+  templates                MessageTemplate[]
+  auditLogs                AuditLog[]
+  importJobs               ImportJob[]
+  notifications            Notification[]
+  campaignsCreated         Campaign[]                    @relation("CampaignCreator")
+  conversationsAssigned    Conversation[]                @relation("ConversationAssignee")
+  conversationAssignments  ConversationAssignment[]
+  routingRules             RoutingRule[]
   conversationRestrictions ConversationUserRestriction[]
   mediaAssets              MediaAsset[]
 
@@ -207,15 +213,15 @@ model User {
 }
 
 model AuditLog {
-  id         String   @id @default(cuid())
-  userId     String?
-  action     String // ex.: lead.update, lead.status.change, import.run
-  entity     String // ex.: Lead, ImportJob
-  entityId   String?
-  changes    Json?
-  ipAddress  String?
-  userAgent  String?
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String // ex.: lead.update, lead.status.change, import.run
+  entity    String // ex.: Lead, ImportJob
+  entityId  String?
+  changes   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
@@ -231,45 +237,45 @@ model AuditLog {
 // ---------------------------------------------------------------------------
 
 model Lead {
-  id            String     @id @default(cuid())
+  id String @id @default(cuid())
 
   // Identificação
-  cnpj          String     @unique
-  razaoSocial   String
-  nomeFantasia  String?
+  cnpj         String  @unique
+  razaoSocial  String
+  nomeFantasia String?
 
   // Contato
-  telefone      String?
-  whatsapp      String?
-  phones        String[]   @default([])
-  email         String?
+  telefone String?
+  whatsapp String?
+  phones   String[] @default([])
+  email    String?
 
   // Localização
-  estado        String?
-  cidade        String?
-  logradouro    String?
-  numero        String?
-  complemento   String?
-  bairro        String?
-  cep           String?
-  ibge          String?
+  estado      String?
+  cidade      String?
+  logradouro  String?
+  numero      String?
+  complemento String?
+  bairro      String?
+  cep         String?
+  ibge        String?
 
   // Classificação
-  segmento      String?
-  porte         String?
-  origem        String?
+  segmento String?
+  porte    String?
+  origem   String?
 
   // Dados cadastrais da Receita
   cnaePrincipalCodigo    String?
   cnaePrincipalDescricao String?
-  cnaeSecundarios        String[] @default([])
+  cnaeSecundarios        String[]  @default([])
   situacaoCadastral      String?
   naturezaJuridica       String?
   dataAbertura           DateTime?
-  capitalSocial          Decimal? @db.Decimal(18, 2)
-  socios                 String[] @default([])
-  optanteSimples         Boolean  @default(false)
-  optanteMei             Boolean  @default(false)
+  capitalSocial          Decimal?  @db.Decimal(18, 2)
+  socios                 String[]  @default([])
+  optanteSimples         Boolean   @default(false)
+  optanteMei             Boolean   @default(false)
 
   // Operação
   status        LeadStatus @default(NEW)
@@ -282,15 +288,15 @@ model Lead {
   updatedAt     DateTime   @updatedAt
 
   // Colunas de origem não mapeadas
-  rawImport     Json?
+  rawImport Json?
 
-  responsavel  User?         @relation("LeadResponsavel", fields: [responsavelId], references: [id], onDelete: SetNull)
-  interactions Interaction[]
-  followUps    FollowUp[]
-  tags         LeadTag[]
+  responsavel        User?               @relation("LeadResponsavel", fields: [responsavelId], references: [id], onDelete: SetNull)
+  interactions       Interaction[]
+  followUps          FollowUp[]
+  tags               LeadTag[]
   campaignRecipients CampaignRecipient[]
-  conversations Conversation[]
-  optOuts      OptOut[]
+  conversations      Conversation[]
+  optOuts            OptOut[]
 
   @@index([status])
   @@index([estado])
@@ -381,24 +387,26 @@ model MediaAsset {
 }
 
 model MessageTemplate {
-  id        String   @id @default(cuid())
-  name      String
-  channel   InteractionType @default(WHATSAPP)
-  subject   String?
-  body      String
-  variables String[] @default([])
-  active    Boolean  @default(true)
-  mediaId   String?
+  id          String          @id @default(cuid())
+  name        String
+  channel     InteractionType @default(WHATSAPP)
+  subject     String?
+  body        String
+  variables   String[]        @default([])
+  active      Boolean         @default(true)
+  mediaId     String?
   createdById String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
-  createdBy         User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  media             MediaAsset?   @relation(fields: [mediaId], references: [id], onDelete: SetNull)
-  interactions      Interaction[]
-  campaigns         Campaign[]    @relation("CampaignTemplate")
-  followUpCampaigns Campaign[]    @relation("CampaignFollowUpTemplate")
-  messages          Message[]
+  createdBy                  User?                   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  media                      MediaAsset?             @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+  interactions               Interaction[]
+  campaigns                  Campaign[]              @relation("CampaignTemplate")
+  followUpCampaigns          Campaign[]              @relation("CampaignFollowUpTemplate")
+  messages                   Message[]
+  autoReplyRuleCampaigns     CampaignAutoReplyRule[] @relation("CampaignAutoReplyRuleTemplate")
+  autoReplyFallbackCampaigns Campaign[]              @relation("CampaignAutoReplyFallbackTemplate")
 
   @@unique([name])
   @@index([active, channel])
@@ -407,10 +415,10 @@ model MessageTemplate {
 }
 
 model Tag {
-  id        String    @id @default(cuid())
-  name      String    @unique
+  id        String   @id @default(cuid())
+  name      String   @unique
   color     String // token de cor, não hex cru na UI
-  createdAt DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   leads LeadTag[]
 
@@ -435,28 +443,28 @@ model LeadTag {
 // ---------------------------------------------------------------------------
 
 model ImportJob {
-  id             String          @id @default(cuid())
-  fileName       String
-  source         String          @default("upload") // upload | cli
-  status         ImportJobStatus @default(PENDING)
-  onlyActive     Boolean         @default(true)
-  columnMapping  Json?
-  totalRows      Int             @default(0)
-  processedRows  Int             @default(0)
-  insertedRows   Int             @default(0)
-  skippedRows    Int             @default(0)
-  failedRows     Int             @default(0)
-  duplicateRows  Int             @default(0)
-  inactiveRows   Int             @default(0)
+  id            String          @id @default(cuid())
+  fileName      String
+  source        String          @default("upload") // upload | cli
+  status        ImportJobStatus @default(PENDING)
+  onlyActive    Boolean         @default(true)
+  columnMapping Json?
+  totalRows     Int             @default(0)
+  processedRows Int             @default(0)
+  insertedRows  Int             @default(0)
+  skippedRows   Int             @default(0)
+  failedRows    Int             @default(0)
+  duplicateRows Int             @default(0)
+  inactiveRows  Int             @default(0)
   /// Leads que entraram, mas com algum campo descartado (e-mail ou telefone inválido).
-  warningRows    Int             @default(0)
-  offset         Int             @default(0)
-  errorMessage   String?
-  startedAt      DateTime?
-  finishedAt     DateTime?
-  createdById    String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  warningRows   Int             @default(0)
+  offset        Int             @default(0)
+  errorMessage  String?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdById   String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
   createdBy User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
   errors    ImportError[]
@@ -487,13 +495,13 @@ model ImportError {
 // ---------------------------------------------------------------------------
 
 model Notification {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
   title     String
   body      String?
   link      String?
   readAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -506,22 +514,22 @@ model Notification {
 // ---------------------------------------------------------------------------
 
 model WhatsAppAccount {
-  id                    String                 @id @default(cuid())
-  name                  String
-  phone                 String?
-  provider              WhatsAppProvider
-  status                WhatsAppAccountStatus  @default(INACTIVE)
-  sessionStatus         WhatsAppSessionStatus  @default(DISCONNECTED)
-  lastHeartbeatAt       DateTime?
-  lastConnectedAt       DateTime?
+  id                   String                @id @default(cuid())
+  name                 String
+  phone                String?
+  provider             WhatsAppProvider
+  status               WhatsAppAccountStatus @default(INACTIVE)
+  sessionStatus        WhatsAppSessionStatus @default(DISCONNECTED)
+  lastHeartbeatAt      DateTime?
+  lastConnectedAt      DateTime?
   /// Inbox Chatwoot ou identificador externo legado.
-  providerInboxId       String?
+  providerInboxId      String?
   /// Nome da instância na Evolution API (WhatsApp Web / QR).
-  providerInstanceName  String?
+  providerInstanceName String?
   /// Data URL (base64) do QR enquanto sessionStatus = QR_CODE.
-  qrCode                String?                @db.Text
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
+  qrCode               String?               @db.Text
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 
   campaigns     Campaign[]
   conversations Conversation[]
@@ -533,38 +541,44 @@ model WhatsAppAccount {
 }
 
 model Campaign {
-  id                    String               @id @default(cuid())
-  name                  String
-  status                CampaignStatus       @default(DRAFT)
-  wizardStep            Int                  @default(1)
-  audienceFilter        Json
-  excludeOptOut         Boolean              @default(true)
-  recipientLimit        Int?
-  routingMode           CampaignRoutingMode  @default(MANUAL)
-  templateId            String?
-  followUpTemplateId    String?
-  followUpDelayHours    Int                  @default(2)
-  followUpStartedAt     DateTime?
-  whatsappAccountId     String?
-  createdById           String
-  totalCount            Int                  @default(0)
-  withWhatsappCount     Int                  @default(0)
-  withoutWhatsappCount  Int                  @default(0)
-  optOutCount           Int                  @default(0)
-  startedAt             DateTime?
-  pausedAt              DateTime?
-  completedAt           DateTime?
-  cancelledAt           DateTime?
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
+  id                   String              @id @default(cuid())
+  name                 String
+  status               CampaignStatus      @default(DRAFT)
+  wizardStep           Int                 @default(1)
+  audienceFilter       Json
+  excludeOptOut        Boolean             @default(true)
+  recipientLimit       Int?
+  routingMode          CampaignRoutingMode @default(MANUAL)
+  templateId           String?
+  followUpTemplateId   String?
+  followUpDelayHours   Int                 @default(2)
+  followUpStartedAt    DateTime?
+  whatsappAccountId    String?
+  createdById          String
+  totalCount           Int                 @default(0)
+  withWhatsappCount    Int                 @default(0)
+  withoutWhatsappCount Int                 @default(0)
+  optOutCount          Int                 @default(0)
+  startedAt            DateTime?
+  pausedAt             DateTime?
+  completedAt          DateTime?
+  cancelledAt          DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
 
-  template         MessageTemplate?     @relation("CampaignTemplate", fields: [templateId], references: [id], onDelete: SetNull)
-  followUpTemplate MessageTemplate?     @relation("CampaignFollowUpTemplate", fields: [followUpTemplateId], references: [id], onDelete: SetNull)
-  whatsappAccount  WhatsAppAccount?     @relation(fields: [whatsappAccountId], references: [id], onDelete: SetNull)
-  createdBy        User                 @relation("CampaignCreator", fields: [createdById], references: [id], onDelete: Restrict)
-  recipients       CampaignRecipient[]
-  conversations    Conversation[]
-  messages         Message[]
+  template                    MessageTemplate?             @relation("CampaignTemplate", fields: [templateId], references: [id], onDelete: SetNull)
+  followUpTemplate            MessageTemplate?             @relation("CampaignFollowUpTemplate", fields: [followUpTemplateId], references: [id], onDelete: SetNull)
+  whatsappAccount             WhatsAppAccount?             @relation(fields: [whatsappAccountId], references: [id], onDelete: SetNull)
+  createdBy                   User                         @relation("CampaignCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  recipients                  CampaignRecipient[]
+  conversations               Conversation[]
+  messages                    Message[]
+  autoReplyEnabled            Boolean                      @default(false)
+  autoReplyFallbackTemplateId String?
+  autoReplyFallbackBody       String?                      @db.Text
+  autoReplyRules              CampaignAutoReplyRule[]
+  autoReplyExecutions         CampaignAutoReplyExecution[]
+  autoReplyFallbackTemplate   MessageTemplate?             @relation("CampaignAutoReplyFallbackTemplate", fields: [autoReplyFallbackTemplateId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([createdById])
@@ -573,25 +587,26 @@ model Campaign {
 }
 
 model CampaignRecipient {
-  id                      String                   @id @default(cuid())
-  campaignId              String
-  leadId                  String
-  phone                   String
-  status                  CampaignRecipientStatus  @default(PENDING)
-  error                   String?
-  processedAt             DateTime?
-  queuedAt                DateTime?
-  idempotencyKey          String                   @unique
-  followUpStatus          CampaignRecipientStatus?
-  followUpError           String?
-  followUpProcessedAt     DateTime?
-  followUpQueuedAt        DateTime?
-  followUpIdempotencyKey  String?                  @unique
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
+  id                     String                   @id @default(cuid())
+  campaignId             String
+  leadId                 String
+  phone                  String
+  status                 CampaignRecipientStatus  @default(PENDING)
+  error                  String?
+  processedAt            DateTime?
+  queuedAt               DateTime?
+  idempotencyKey         String                   @unique
+  followUpStatus         CampaignRecipientStatus?
+  followUpError          String?
+  followUpProcessedAt    DateTime?
+  followUpQueuedAt       DateTime?
+  followUpIdempotencyKey String?                  @unique
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
 
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  lead     Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaign           Campaign                    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  lead               Lead                        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  autoReplyExecution CampaignAutoReplyExecution?
 
   @@unique([campaignId, leadId])
   @@index([campaignId, status])
@@ -600,23 +615,68 @@ model CampaignRecipient {
   @@map("campaign_recipients")
 }
 
+model CampaignAutoReplyRule {
+  id                 String             @id @default(cuid())
+  campaignId         String
+  position           Int
+  matchMode          AutoReplyMatchMode
+  matchValues        String[]
+  responseTemplateId String?
+  responseBody       String?            @db.Text
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  campaign         Campaign                     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  responseTemplate MessageTemplate?             @relation("CampaignAutoReplyRuleTemplate", fields: [responseTemplateId], references: [id], onDelete: SetNull)
+  executions       CampaignAutoReplyExecution[]
+
+  @@unique([campaignId, position])
+  @@index([campaignId])
+  @@index([responseTemplateId])
+  @@map("campaign_auto_reply_rules")
+}
+
+model CampaignAutoReplyExecution {
+  id                String    @id @default(cuid())
+  campaignId        String
+  recipientId       String    @unique
+  ruleId            String?
+  inboundMessageId  String    @unique
+  outboundMessageId String?   @unique
+  matchedFallback   Boolean   @default(false)
+  status            String
+  error             String?
+  createdAt         DateTime  @default(now())
+  processedAt       DateTime?
+
+  campaign        Campaign               @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  recipient       CampaignRecipient      @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  rule            CampaignAutoReplyRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  inboundMessage  Message                @relation("AutoReplyInboundMessage", fields: [inboundMessageId], references: [id], onDelete: Cascade)
+  outboundMessage Message?               @relation("AutoReplyOutboundMessage", fields: [outboundMessageId], references: [id], onDelete: SetNull)
+
+  @@index([campaignId, createdAt])
+  @@index([ruleId])
+  @@map("campaign_auto_reply_executions")
+}
+
 model Conversation {
-  id                 String              @id @default(cuid())
+  id                 String             @id @default(cuid())
   leadId             String?
   whatsappAccountId  String
   campaignId         String?
   phone              String
-  status             ConversationStatus  @default(WAITING)
+  status             ConversationStatus @default(WAITING)
   assignedUserId     String?
   lastMessageAt      DateTime?
   lastMessagePreview String?
-  unreadCount        Int                 @default(0)
+  unreadCount        Int                @default(0)
   firstInboundAt     DateTime?
   firstResponseAt    DateTime?
   assignedAt         DateTime?
   resolvedAt         DateTime?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   lead            Lead?                         @relation(fields: [leadId], references: [id], onDelete: SetNull)
   whatsappAccount WhatsAppAccount               @relation(fields: [whatsappAccountId], references: [id], onDelete: Restrict)
@@ -635,23 +695,25 @@ model Conversation {
 }
 
 model Message {
-  id                 String                 @id @default(cuid())
-  conversationId     String
-  campaignId         String?
-  templateId         String?
-  mediaId            String?
-  direction          MessageDirection
-  kind               MessageKind            @default(TEXT)
-  body               String
-  status             MessageDeliveryStatus  @default(PENDING)
-  providerMessageId  String?                @unique
-  sentAt             DateTime?
-  createdAt          DateTime               @default(now())
+  id                String                @id @default(cuid())
+  conversationId    String
+  campaignId        String?
+  templateId        String?
+  mediaId           String?
+  direction         MessageDirection
+  kind              MessageKind           @default(TEXT)
+  body              String
+  status            MessageDeliveryStatus @default(PENDING)
+  providerMessageId String?               @unique
+  sentAt            DateTime?
+  createdAt         DateTime              @default(now())
 
-  conversation Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  campaign     Campaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  template     MessageTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  media        MediaAsset?      @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+  conversation               Conversation                @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  campaign                   Campaign?                   @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  template                   MessageTemplate?            @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  media                      MediaAsset?                 @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+  autoReplyInboundExecution  CampaignAutoReplyExecution? @relation("AutoReplyInboundMessage")
+  autoReplyOutboundExecution CampaignAutoReplyExecution? @relation("AutoReplyOutboundMessage")
 
   @@index([conversationId, createdAt])
   @@index([campaignId])
@@ -661,14 +723,14 @@ model Message {
 }
 
 model ConversationAssignment {
-  id              String           @id @default(cuid())
-  conversationId  String
-  fromUserId      String?
-  toUserId        String?
-  reason          AssignmentReason
-  note            String?
-  createdById     String?
-  createdAt       DateTime         @default(now())
+  id             String           @id @default(cuid())
+  conversationId String
+  fromUserId     String?
+  toUserId       String?
+  reason         AssignmentReason
+  note           String?
+  createdById    String?
+  createdAt      DateTime         @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   createdBy    User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
@@ -679,11 +741,11 @@ model ConversationAssignment {
 }
 
 model ConversationUserRestriction {
-  id              String   @id @default(cuid())
-  conversationId  String
-  userId          String
-  reason          String?
-  createdAt       DateTime @default(now())
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  reason         String?
+  createdAt      DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)

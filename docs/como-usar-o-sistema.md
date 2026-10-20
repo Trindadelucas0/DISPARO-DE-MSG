@@ -325,6 +325,9 @@ Dentro de uma campanha (clique no **nome** na lista):
 |  [ Só cadastro manual ]  [ Salvar rascunho ]  [ Iniciar campanha ] |
 |  [ Destinatários ]  Adicionar mais  [ Adicionar à fila ]           |
 |  [ Disparar retorno agora ]                                        |
+|  Respostas automáticas                               [ Ativada ]   |
+|  Quando: [ Igual a ] Valor: [ 2 ]  Responder com: [ Template ]    |
+|  Se nenhuma regra corresponder: [ Texto ou template ] [ Salvar ]  |
 +--------------------------------------------------------------------+
 ```
 
@@ -343,6 +346,17 @@ Dentro de uma campanha (clique no **nome** na lista):
 9. Acompanhe **Já nesta campanha**, **Enviados**, **Ainda no público**. Clique em **Destinatários** para ver cada um.
 10. **Próximo lote:** em **Adicionar mais**, coloque a quantidade e clique em **Adicionar à fila**. Quem já recebeu nesta campanha fica de fora.
 11. **Retorno:** depois das horas de **Esperar (horas)**, o sistema tenta mandar sozinho se a pessoa **não** respondeu — **se o TI deixou o sistema ligado**. Se passou o tempo e nada saiu, clique em **Disparar retorno agora**. Quem já ganhou o retorno não recebe de novo. **Pausar** ou **Cancelar** para. Se o selo estiver **Em envio** e nada sair, clique em **Retomar**.
+12. **Resposta automática:** em **Respostas automáticas**, escolha **Igual a**, **Contém** ou **Uma das alternativas**, informe o número/palavra e selecione um template ou escreva um texto próprio. Use **Adicionar regra** para novas condições.
+13. Configure também **Se nenhuma regra corresponder**, ligue **Ativada** e clique em **Salvar automação**. A ordem importa: a primeira regra compatível é usada.
+
+Cada contato recebe no máximo uma resposta automática nessa campanha. A automação continua ativa
+mesmo após o fim da campanha; para parar, volte à campanha, desligue **Ativada** e salve. A resposta
+do contato e a mensagem automática continuam visíveis na **Inbox**.
+
+No painel do público, **Números únicos** conta NÚMEROS, não leads: o mesmo WhatsApp em dois
+leads (a empresa da planilha e o contato avulso da mesma pessoa) recebe **uma** mensagem só.
+**Vão receber** vem desse número, então o que a tela promete é o que a campanha cria. Opt-out
+também é do número: quem pediu para sair não recebe nem pelo outro lead.
 
 Cem contatos levam cerca de **20 minutos** nesse ritmo. Mensagem avulsa no lead e resposta na Inbox **não** entram nesse teto.
 
@@ -906,40 +920,65 @@ Se campanha não inicia, QR não aparece ou a Inbox não atualiza sozinha: Redis
 
 ### Subir o ambiente
 
-Pré-requisitos: Node 24, PostgreSQL 18 (serviço `postgresql-x64-18`, porta 5432) e
-Docker.
+Pré-requisitos: Node 24, Docker (Docker Desktop ligado) e PostgreSQL. O Postgres pode ser
+o serviço nativo `postgresql-x64-18` na 5432 **ou** um container próprio deste CRM — veja
+abaixo.
 
 #### Primeira vez
 
-Comandos abaixo rodam **dentro de** `CRM/` (pasta da aplicação).
+Comandos abaixo rodam **dentro da pasta da aplicação**.
 
 ```powershell
-cd c:\Users\trind\Desktop\dash\CRM
+cd c:\Users\trind\Desktop\DISPARO-DE-MSG
 
-# 1. Dependências
-npm install
+# 1. Dependências (exatamente o que está no package-lock.json)
+npm ci
 
-# 2. Redis do projeto (container próprio, porta 6380 — não mexe em container de outro projeto)
-docker compose up -d
-
-# 3. Configuração
+# 2. Configuração
 Copy-Item .env.example .env
 #    Edite o .env e preencha:
 #    - DATABASE_URL com o usuário e a senha do seu PostgreSQL
 #    - SEED_ADMIN_PASSWORD com a senha que você quer para o admin (mínimo 10 caracteres)
+#    O .env está no .gitignore. Nunca versione este arquivo.
 
-# 4. Segredo de sessão (grava no .env sem exibir o valor)
+# 3. Segredo de sessão (grava no .env sem exibir o valor)
 npm run auth:secret
 
-# 5. Banco
-#    Crie a base uma vez, se ainda não existir:
-#    psql -U postgres -c "CREATE DATABASE crm_prospeccao"
+# 4. Banco + Redis + worker
+docker compose up -d
+#    Espere "healthy" em crm-postgres e crm-redis:
+docker compose ps
+
+# 5. Migrations, cliente Prisma e carga inicial
 npm run db:deploy     # aplica as migrations
+npm run db:generate   # gera o cliente Prisma (necessário antes do seed)
 npm run db:seed       # cria o admin, as 7 tags e os 3 templates
 
-# 6. Carga das planilhas do workspace
-npm run import:xlsx -- --all-situacoes
+# 6. Aplicação
+npm run dev           # http://localhost:3001
 ```
+
+**Postgres em container, quando a 5432 já é de outro serviço.** Nesta máquina a 5432
+pertence ao serviço nativo `postgresql-x64-18`. Para não mexer nele, o CRM sobe o seu
+próprio Postgres (volume `crm_postgres_data`, exclusivo deste projeto) em outra porta.
+No `.env`:
+
+```dotenv
+CRM_DB_PASSWORD="a-senha-que-voce-escolher"
+CRM_DB_PORT="5442"
+CRM_DOCKER_DB_HOST="postgres"
+COMPOSE_PATH_SEPARATOR=:
+COMPOSE_FILE=docker-compose.yml:docker-compose.postgres.yml
+DATABASE_URL="postgresql://crm:a-senha-que-voce-escolher@127.0.0.1:5442/crm_prospeccao?schema=public"
+```
+
+A senha em `CRM_DB_PASSWORD` e a de dentro de `DATABASE_URL` têm de ser **iguais**, e sem
+`@ : / # %` (quebram a URL). Com `COMPOSE_FILE` acima, um `docker compose up -d` sobe os
+três containers: `crm-postgres`, `crm-redis` (6380) e `crm-worker`.
+
+Usando o Postgres nativo em vez do container, deixe `COMPOSE_FILE` e `CRM_DOCKER_DB_HOST`
+de fora, aponte `DATABASE_URL` para a 5432 e crie a base uma vez:
+`psql -U postgres -c "CREATE DATABASE crm_prospeccao"`.
 
 
 
@@ -1007,6 +1046,63 @@ npm run import:xlsx -- --all-situacoes   # inclui BAIXADA, INAPTA, SUSPENSA e NU
 npm run import:xlsx -- caminho\a.xlsx    # arquivo específico
 ```
 
+### Importar um pacote de planilha + listas de telefone
+
+`npm run import:telefones` carrega de uma vez uma pasta com a planilha de empresas e as
+listas de telefone avulso (CSV ou XLSX, com ou sem nome, com ou sem cabeçalho). Serve para
+pacotes como o `TELEFONES.rar`, que traz a lista da Receita e várias listas de números.
+
+**Dois modos, e só o segundo escreve:**
+
+```powershell
+npm run import:telefones -- preview   # analisa e mostra os totais; NÃO grava nada
+npm run import:telefones -- apply     # grava, e só depois da prévia passar nas validações
+```
+
+Opções: `--dir <caminho>` (padrão `data/fontes-telefones/raw`), `--all-situacoes`,
+`--sem-relatorio`.
+
+**Antes de rodar:** extraia o pacote em `data/fontes-telefones/raw/`. Essa pasta está no
+`.gitignore` — planilha de terceiro **não** entra no Git. O relatório de cada execução fica
+em `data/fontes-telefones/relatorios/`, também fora do Git.
+
+**O que o comando faz, em ordem:**
+
+1. Lê a pasta e separa, **pelo conteúdo**, a planilha de empresa (tem CNPJ e razão social)
+   das listas de telefone.
+2. Normaliza CNPJ e telefone. Junta `DDD1`/`Telefone1` e `DDD2`/`Telefone2` da lista
+   empresarial em uma lista só de telefones por empresa.
+3. Deduplica os números: dentro do arquivo, entre arquivos e **entre as versões `.csv` e
+   `.xlsx` da mesma lista**.
+4. Empresas entram pelo **CNPJ**. CNPJ que já existe não duplica e não é sobrescrito: só
+   campo de contato **vazio** é preenchido e telefone ausente é **acrescentado**.
+5. Número que já está em uma empresa cadastrada é ligado a ela. Se o número é celular e a
+   empresa está sem WhatsApp, o campo vazio é preenchido.
+6. O que sobra nasce como **contato avulso**, com o nome da fonte ou
+   `Contato importado • final XXXX`. O CNPJ desse contato é uma chave técnica derivada do
+   próprio número: a tela mostra **—** no CNPJ, e rodar o comando de novo não duplica.
+
+**Celular, fixo e inválido.** Só vira WhatsApp o **celular** válido: DDD existente + nono
+dígito (11 dígitos, número começando em 9). Fixo entra apenas em **Telefone** e **fica fora
+de público de campanha**. Número fora do padrão é **rejeitado e relatado**, nunca
+"corrigido": o comando não inventa o nono dígito nem troca DDD.
+
+Por isso o relatório traz a linha **com formato de celular antigo**: fixo de 10 dígitos cujo
+número começa em 9 (ex.: `61 9251-1651`) é o formato de celular de antes da migração para o
+nono dígito. Esses números entram como fixo e não recebem campanha. Transformá-los em
+celular seria adivinhar duas coisas que não estão no dado — que o número é celular e que
+continua ativo.
+
+**Rodar duas vezes não muda nada.** A segunda execução reporta tudo como "já existia" e não
+cria nem altera lead.
+
+**A carga não cria campanha e não envia mensagem.** Disparo continua sendo ato manual na
+tela de campanhas, com conta WhatsApp conectada.
+
+**Conferir depois:** em **Leads**, busque por nome, CNPJ ou telefone. O filtro de situação
+já vem em **ATIVA**; empresa com outra situação só aparece em **Situação: Todas**. O filtro
+**WhatsApp: Com celular** mostra exatamente quem pode entrar em campanha.
+
 
 
 ### Comandos úteis
@@ -1022,8 +1118,12 @@ npm run design:check        # verificação do padrão visual
 npm run db:status           # estado das migrations
 npm run db:studio           # navegador do banco (Prisma Studio)
 npm run db:seed             # recria admin, tags e templates (idempotente)
-npm run import:xlsx         # importação pelo terminal
-docker compose up -d        # sobe o Redis do projeto
-docker compose down         # derruba o Redis do projeto
+npm run db:generate         # gera o cliente Prisma
+npm run import:xlsx         # importação de planilha pelo terminal
+npm run import:telefones -- preview   # analisa um pacote de planilha + telefones
+npm run import:telefones -- apply     # grava esse pacote
+docker compose up -d        # sobe Postgres (se configurado), Redis e worker
+docker compose ps           # estado e saúde dos containers
+docker compose down         # derruba os containers do projeto
 ```
 

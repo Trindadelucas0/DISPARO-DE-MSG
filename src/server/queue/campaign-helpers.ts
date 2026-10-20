@@ -77,3 +77,67 @@ export function nextRecipientBatch<T extends { leadId: string }>(
     limit,
   );
 }
+
+export interface RecipientCandidate {
+  readonly leadId: string;
+  /** Número nacional (DDD + número, sem o 55). */
+  readonly phone: string;
+}
+
+export interface RecipientSelection<T> {
+  readonly rows: T[];
+  readonly skippedOptOut: number;
+  readonly skippedDuplicatePhone: number;
+}
+
+export interface RecipientSelectionOptions {
+  /** Números em opt-out, já normalizados. Vazio quando a campanha não exclui. */
+  readonly optedOutPhones: ReadonlySet<string>;
+  /** Números que já estão na campanha — bloqueiam a segunda mensagem. */
+  readonly existingPhones: ReadonlySet<string>;
+  readonly existingLeadIds: ReadonlySet<string>;
+  readonly limit: number | null;
+}
+
+/**
+ * Quem recebe o disparo: um número = uma mensagem.
+ *
+ * O mesmo WhatsApp aparece em mais de um lead — a empresa da lista da Receita
+ * e o contato avulso da mesma pessoa vindo de uma lista de telefone. Sem esta
+ * deduplicação a pessoa receberia a campanha duas vezes.
+ *
+ * Ordem das regras, e ela importa:
+ * 1. opt-out sai primeiro, para não gastar a vaga do número;
+ * 2. número repetido sai depois — fica o primeiro candidato da lista, que vem
+ *    ordenada por `id` do lead, então a escolha é estável entre execuções;
+ * 3. lead que já está na campanha sai;
+ * 4. só então o teto de quantidade é aplicado, sobre números únicos.
+ */
+export function selectRecipients<T extends RecipientCandidate>(
+  candidates: readonly T[],
+  options: RecipientSelectionOptions,
+): RecipientSelection<T> {
+  const seenPhones = new Set<string>(options.existingPhones);
+  const unique: T[] = [];
+  let skippedOptOut = 0;
+  let skippedDuplicatePhone = 0;
+
+  for (const candidate of candidates) {
+    if (options.optedOutPhones.has(candidate.phone)) {
+      skippedOptOut += 1;
+      continue;
+    }
+    if (seenPhones.has(candidate.phone)) {
+      skippedDuplicatePhone += 1;
+      continue;
+    }
+    seenPhones.add(candidate.phone);
+    unique.push(candidate);
+  }
+
+  return {
+    rows: nextRecipientBatch(unique, options.existingLeadIds, options.limit),
+    skippedOptOut,
+    skippedDuplicatePhone,
+  };
+}

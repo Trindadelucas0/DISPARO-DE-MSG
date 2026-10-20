@@ -21,6 +21,10 @@ export const IMPORT_FIELDS = [
   'estado',
   'dataAbertura',
   'telefones',
+  'ddd1',
+  'telefone1',
+  'ddd2',
+  'telefone2',
   'email',
   'capitalSocial',
   'cnaePrincipalCodigo',
@@ -86,13 +90,30 @@ export const IMPORT_FIELD_SPECS: readonly ImportFieldSpec[] = [
     field: 'dataAbertura',
     label: 'Data de abertura',
     required: false,
-    aliases: ['data de abertura', 'data abertura', 'data de inicio atividade'],
+    aliases: ['data de abertura', 'data abertura', 'data de inicio atividade', 'abertura'],
   },
   {
     field: 'telefones',
     label: 'Telefones',
     required: false,
     aliases: ['telefones', 'telefone', 'ddd telefone'],
+  },
+  // A lista empresarial traz o DDD separado do número, em duas colunas por
+  // empresa. Os quatro campos abaixo são juntados com a coluna `telefones`
+  // em uma lista só, na ordem 1 e depois 2 (normalize.ts).
+  { field: 'ddd1', label: 'DDD 1', required: false, aliases: ['ddd1', 'ddd 1'] },
+  {
+    field: 'telefone1',
+    label: 'Telefone 1',
+    required: false,
+    aliases: ['telefone1', 'telefone 1'],
+  },
+  { field: 'ddd2', label: 'DDD 2', required: false, aliases: ['ddd2', 'ddd 2'] },
+  {
+    field: 'telefone2',
+    label: 'Telefone 2',
+    required: false,
+    aliases: ['telefone2', 'telefone 2'],
   },
   { field: 'email', label: 'E-mail', required: false, aliases: ['e mail', 'email', 'correio eletronico'] },
   {
@@ -105,13 +126,18 @@ export const IMPORT_FIELD_SPECS: readonly ImportFieldSpec[] = [
     field: 'cnaePrincipalCodigo',
     label: 'Código do CNAE principal',
     required: false,
-    aliases: ['codigo da atividade principal', 'cnae fiscal', 'codigo cnae principal'],
+    aliases: ['codigo da atividade principal', 'cnae fiscal', 'codigo cnae principal', 'cnae'],
   },
   {
     field: 'cnaePrincipalDescricao',
     label: 'Descrição do CNAE principal',
     required: false,
-    aliases: ['descricao da atividade principal', 'cnae fiscal descricao', 'atividade principal'],
+    aliases: [
+      'descricao da atividade principal',
+      'cnae fiscal descricao',
+      'atividade principal',
+      'ramo de atividade',
+    ],
   },
   {
     field: 'cnaeSecundariosCodigos',
@@ -131,7 +157,12 @@ export const IMPORT_FIELD_SPECS: readonly ImportFieldSpec[] = [
     required: false,
     aliases: ['codigo ibge do municipio', 'codigo ibge', 'ibge'],
   },
-  { field: 'socios', label: 'Sócios', required: false, aliases: ['socios', 'quadro societario'] },
+  {
+    field: 'socios',
+    label: 'Sócios',
+    required: false,
+    aliases: ['socios', 'quadro societario', 'socio'],
+  },
   {
     field: 'porte',
     label: 'Porte',

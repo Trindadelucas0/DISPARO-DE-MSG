@@ -11,7 +11,7 @@ import {
 import { MUTATION_TAGS, notifyChange } from '@/lib/events';
 import { isRedisAvailable } from '@/lib/redis';
 import { prisma } from '@/lib/db';
-import { toWhatsappNumber } from '@/lib/validation/phone';
+import { nationalPhoneDigits, toWhatsappNumber } from '@/lib/validation/phone';
 import { BadRequestError, NotFoundError } from '@/server/api-handler';
 import { assertQueueAvailable, enqueueCampaignSend } from '@/server/queue/enqueue';
 import { buildLeadWhere } from '@/server/repositories/lead.repository';
@@ -23,6 +23,7 @@ import {
   createRecipients,
   findCampaign,
   findCampaignRecipientLeadIds,
+  findCampaignRecipientPhones,
   findFollowUpEligibleRecipients,
   findFollowUpQueuedRecipients,
   findPendingRecipients,
@@ -34,6 +35,7 @@ import {
   updateCampaign,
 } from '@/server/repositories/campaign.repository';
 import { recordAudit } from '@/server/services/audit.service';
+import { optedOutPhoneSet } from '@/server/services/opt-out.service';
 import {
   CAMPAIGN_FOLLOW_UP_DELAY_HOURS_DEFAULT,
   CAMPAIGN_FOLLOW_UP_DELAY_HOURS_MAX,
@@ -43,8 +45,8 @@ import {
 } from '@/constants/campaign';
 import {
   followUpIdempotencyKey,
-  nextRecipientBatch,
   recipientIdempotencyKey,
+  selectRecipients,
 } from '@/server/queue/campaign-helpers';
 
 export const campaignDraftSchema = z.object({
@@ -224,11 +226,13 @@ export async function countCampaignAudience(user: SessionUser, filters: LeadFilt
   const scope = leadScopeWhere(user);
   const where = buildLeadWhere(filters, scope);
 
-  const [found, withWhatsapp, sample] = await Promise.all([
+  const [found, withWhatsapp, uniqueWhatsapp, sample] = await Promise.all([
     prisma.lead.count({ where }),
     prisma.lead.count({
       where: { AND: [where, { NOT: { whatsapp: null } }, { whatsapp: { not: '' } }] },
     }),
+    // Números distintos: o mesmo WhatsApp em dois leads é UMA mensagem.
+    countUniqueWhatsapp(where),
     prisma.lead.findMany({
       where: filters.ids?.length
         ? where
@@ -248,20 +252,61 @@ export async function countCampaignAudience(user: SessionUser, filters: LeadFilt
     }),
   ]);
 
-  let optOut = 0;
-  if (excludeOptOut) {
-    optOut = await prisma.optOut.count({
-      where: { lead: where },
-    });
-  }
+  const optOut = excludeOptOut ? await countOptedOutInAudience(where) : 0;
 
   return {
     found,
     withWhatsapp,
+    uniqueWhatsapp,
     withoutWhatsapp: Math.max(0, found - withWhatsapp),
     optOut,
     sample,
   };
+}
+
+const WITH_WHATSAPP: Prisma.LeadWhereInput[] = [
+  { NOT: { whatsapp: null } },
+  { whatsapp: { not: '' } },
+];
+
+/**
+ * Quantos WhatsApp distintos existem no público.
+ *
+ * `withWhatsapp` conta leads; isto conta pessoas alcançáveis. A diferença
+ * entre os dois é o que a deduplicação por número vai descartar no disparo.
+ */
+async function countUniqueWhatsapp(where: Prisma.LeadWhereInput): Promise<number> {
+  const groups = await prisma.lead.groupBy({
+    by: ['whatsapp'],
+    where: { AND: [where, ...WITH_WHATSAPP] },
+  });
+  return groups.length;
+}
+
+/**
+ * Números do público que estão em opt-out — contados por NÚMERO.
+ *
+ * Contar linhas de `opt_outs` dos leads do público erraria duas vezes: deixaria
+ * de fora quem pediu para sair por outro lead com o mesmo WhatsApp, e contaria
+ * duas vezes o número que aparece em dois leads.
+ */
+async function countOptedOutInAudience(where: Prisma.LeadWhereInput): Promise<number> {
+  const optedOut = await prisma.optOut.findMany({ select: { phone: true }, distinct: ['phone'] });
+  if (optedOut.length === 0) return 0;
+
+  const variants = new Set<string>();
+  for (const row of optedOut) {
+    const national = nationalPhoneDigits(row.phone);
+    if (national.length === 0) continue;
+    variants.add(national);
+    variants.add(`55${national}`);
+  }
+
+  const groups = await prisma.lead.groupBy({
+    by: ['whatsapp'],
+    where: { AND: [where, ...WITH_WHATSAPP, { whatsapp: { in: [...variants] } }] },
+  });
+  return groups.length;
 }
 
 export async function getCampaignMetrics(user: SessionUser, id: string) {
@@ -344,6 +389,17 @@ export async function getCampaignRecipients(
   };
 }
 
+/**
+ * Monta os destinatários da campanha.
+ *
+ * Um número = uma mensagem. Depois da importação de listas de telefone o mesmo
+ * WhatsApp aparece em mais de um lead (a empresa da Receita e o contato avulso
+ * da mesma pessoa); sem a deduplicação por número a pessoa receberia o disparo
+ * duas vezes. O primeiro lead na ordem de `id` fica com o número; os outros
+ * entram em `skippedDuplicatePhone`, não na campanha.
+ *
+ * Opt-out também é por número, não por lead: ver `opt-out.service.ts`.
+ */
 async function materializeRecipients(
   user: SessionUser,
   campaignId: string,
@@ -351,6 +407,7 @@ async function materializeRecipients(
   excludeOptOut: boolean,
   recipientLimit: number | null,
   existingLeadIds: ReadonlySet<string> = new Set(),
+  existingPhones: ReadonlySet<string> = new Set(),
 ) {
   const where = buildLeadWhere(filters, leadScopeWhere(user));
   const leads = await prisma.lead.findMany({
@@ -361,51 +418,40 @@ async function materializeRecipients(
     select: { id: true, whatsapp: true },
   });
 
-  const optOutSet = new Set<string>();
-  if (excludeOptOut && leads.length > 0) {
-    const opts = await prisma.optOut.findMany({
-      where: { leadId: { in: leads.map((l) => l.id) } },
-      select: { leadId: true, phone: true },
-    });
-    for (const row of opts) optOutSet.add(`${row.leadId}:${row.phone}`);
-  }
+  const candidates = leads
+    .map((lead) => ({ lead, phone: toWhatsappNumber(lead.whatsapp) }))
+    .filter((entry) => entry.phone !== null)
+    .map((entry) => ({ lead: entry.lead, digits: nationalPhoneDigits(entry.phone) }));
 
-  const rows: { campaignId: string; leadId: string; phone: string; idempotencyKey: string }[] = [];
-  let skippedOptOut = 0;
-  let withoutValid = 0;
+  const optOutSet = excludeOptOut
+    ? await optedOutPhoneSet(candidates.map((entry) => entry.digits))
+    : new Set<string>();
 
-  for (const lead of leads) {
-    const phone = toWhatsappNumber(lead.whatsapp);
-    if (!phone) {
-      withoutValid += 1;
-      continue;
-    }
-    const digits = phone.replace(/^55/, '');
-    if (excludeOptOut && (optOutSet.has(`${lead.id}:${digits}`) || optOutSet.has(`${lead.id}:${lead.whatsapp}`))) {
-      skippedOptOut += 1;
-      continue;
-    }
-    rows.push({
+  const selection = selectRecipients(
+    candidates.map(({ lead, digits }) => ({
       campaignId,
       leadId: lead.id,
       phone: digits,
       idempotencyKey: recipientIdempotencyKey(campaignId, lead.id),
-    });
-  }
-
-  const limited = nextRecipientBatch(rows, existingLeadIds, recipientLimit);
+    })),
+    { optedOutPhones: optOutSet, existingPhones, existingLeadIds, limit: recipientLimit },
+  );
 
   // Cria em lotes para não estourar o payload do Prisma.
   const BATCH = 500;
-  for (let i = 0; i < limited.length; i += BATCH) {
-    await createRecipients(limited.slice(i, i + BATCH));
+  for (let i = 0; i < selection.rows.length; i += BATCH) {
+    await createRecipients(selection.rows.slice(i, i + BATCH));
   }
 
   return {
-    recipientCount: limited.length,
-    skippedOptOut,
-    withoutValid,
-    withWhatsapp: leads.length,
+    recipientCount: selection.rows.length,
+    skippedOptOut: selection.skippedOptOut,
+    skippedDuplicatePhone: selection.skippedDuplicatePhone,
+    withoutValid: leads.length - candidates.length,
+    /** Leads do público que têm número válido — inclui os repetidos. */
+    leadsWithWhatsapp: candidates.length,
+    /** Números distintos: o teto real de mensagens deste público. */
+    uniqueWhatsapp: new Set(candidates.map((entry) => entry.digits)).size,
   };
 }
 
@@ -567,7 +613,7 @@ export async function startCampaign(user: SessionUser, id: string) {
         startedAt: new Date(),
         pausedAt: null,
         totalCount: material.recipientCount,
-        withWhatsappCount: material.withWhatsapp,
+        withWhatsappCount: material.leadsWithWhatsapp,
         withoutWhatsappCount: audience.withoutWhatsapp,
         optOutCount: material.skippedOptOut,
       });
@@ -785,6 +831,11 @@ export async function addCampaignRecipients(
 
   const filters = leadFiltersSchema.parse(campaign.audienceFilter ?? {});
   const existing = new Set(await findCampaignRecipientLeadIds(id));
+  // Também por número: um lead diferente com o mesmo WhatsApp de quem já está
+  // na campanha não pode render uma segunda mensagem para a mesma pessoa.
+  const existingPhones = new Set(
+    (await findCampaignRecipientPhones(id)).map((phone) => nationalPhoneDigits(phone)),
+  );
   const material = await materializeRecipients(
     user,
     id,
@@ -792,6 +843,7 @@ export async function addCampaignRecipients(
     campaign.excludeOptOut,
     count,
     existing,
+    existingPhones,
   );
   if (material.recipientCount === 0) {
     throw new BadRequestError(

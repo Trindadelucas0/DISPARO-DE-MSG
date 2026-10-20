@@ -19,9 +19,9 @@ continua sendo a fonte de regra, campo e path de código. Tutorial para o client
 [`docs/como-usar-o-sistema.md`](docs/como-usar-o-sistema.md)
 (guia visual: wireframe ASCII por tela e passos “clique aqui”; linguagem do dia a dia).
 
-- Versão: 0.16.19 — Excluir conversa na Inbox
+- Versão: 0.17.0 — Respostas automáticas por campanha
 - Fases entregues: 1 a 9 (MVP) + restyle 0.11.0 + identidade 0.12.0 + atendimento 0.13.0 + retorno 0.14.0
-- Última atualização: 29/09/2026 — Excluir conversa na Inbox (`DELETE /api/conversations/:id`). Antes, 0.16.18 — Uma fonte: CRM = disparo. Deploy VPS (`deploy/`, `docker-compose.vps.yml`) vive em `CRM/`. GitHub `DISPARO-DE-MSG` recebe o mesmo código via `npm run publish:github`. `npm start` escuta `127.0.0.1:3001`.
+- Última atualização: 19/10/2026 — Regras de resposta automática vinculadas à campanha, com comparação exata, trecho ou alternativas e resposta padrão.
 
 ---
 
@@ -78,7 +78,7 @@ Regras não negociáveis desta separação:
 | --- | --- | --- |
 | Framework | Next.js 15 App Router, React 19, TypeScript estrito | `tsc --noEmit` limpo |
 | Estilo | Tailwind 3.4 + tokens OKLCH | Sem `shadcn add`: componentes escritos à mão |
-| Banco | PostgreSQL 16/18, base `crm_prospeccao` | Local: nativo 5432. VPS: container `crm-postgres` só em `127.0.0.1:5432` |
+| Banco | PostgreSQL 16/18, base `crm_prospeccao` | Local: nativo 5432 **ou** container `crm-postgres` em `127.0.0.1:${CRM_DB_PORT}` (volume `crm_postgres_data`). VPS: container `crm-postgres` só em `127.0.0.1:5432` |
 | ORM | Prisma 6 | migrations em `prisma/migrations` |
 | Cache / rate limit / filas | Redis 7 `crm-redis` `127.0.0.1:6380` + BullMQ | Campanha exige Redis |
 | Autenticação | Auth.js v5, provider Credentials, `bcryptjs` (12 rounds) | JWT, sessão de 8 horas |
@@ -94,10 +94,34 @@ O Next.js deste CRM escuta **somente** em `127.0.0.1:3001` no `npm start` (produ
 systemd). `npm run dev` também usa a porta 3001. A porta 3000 fica livre para outros sistemas.
 `AUTH_URL` local aponta para `http://localhost:3001`.
 
-Dois Compose, o mesmo repositório: `docker-compose.yml` = Windows (Redis **6380** + worker,
-Postgres nativo). `docker-compose.vps.yml` = VPS (Postgres + Redis **6379** + worker, volumes
-`crm_pg_data` / `crm_redis_data`). Na VPS nunca suba o compose Windows nem
-`docker-compose.postgres.yml` (outro nome de volume = banco vazio).
+Três Compose, o mesmo repositório:
+
+| Arquivo | Onde | O que sobe |
+| --- | --- | --- |
+| `docker-compose.yml` | Windows | Redis **6380** + worker. Postgres fica por fora |
+| `docker-compose.postgres.yml` | Windows, opcional | Postgres em `127.0.0.1:${CRM_DB_PORT:-5432}`, volume `crm_postgres_data` |
+| `docker-compose.vps.yml` | VPS | Postgres + Redis **6379** + worker, volumes `crm_pg_data` / `crm_redis_data` |
+
+Na VPS nunca suba o compose Windows nem `docker-compose.postgres.yml` (outro nome de volume =
+banco vazio).
+
+**Postgres em container no Windows.** A 5432 desta máquina pertence ao serviço nativo
+`postgresql-x64-18`. Para não mexer nele, `CRM_DB_PORT` publica o container em outra porta
+(5442 nesta máquina) — dentro do container a porta segue 5432. Os dois compose sobem juntos
+em um comando só com, no `.env`:
+
+```dotenv
+COMPOSE_PATH_SEPARATOR=:
+COMPOSE_FILE=docker-compose.yml:docker-compose.postgres.yml
+CRM_DB_PASSWORD=...        # igual à senha dentro de DATABASE_URL
+CRM_DB_PORT=5442
+CRM_DOCKER_DB_HOST=postgres
+```
+
+`COMPOSE_PATH_SEPARATOR` vem explícito porque no Windows o separador default de
+`COMPOSE_FILE` é `;`. `CRM_DOCKER_DB_HOST=postgres` faz o `crm-worker` falar com o banco pelo
+nome do serviço no Compose em vez do loopback da máquina
+(`src/lib/worker-docker-env.ts`).
 
 ### Processo local (só este CRM)
 
@@ -118,7 +142,8 @@ Não instale de novo sem pedido explícito.
 
 O worker Baileys **não** precisa de segundo terminal. `docker compose up -d` sobe Redis e
 `crm-worker` (`Dockerfile.worker`). O container fala com o Redis na rede do Compose
-(`redis:6379`). O Postgres: no Windows, nativo via `host.docker.internal`; na VPS, container
+(`redis:6379`). O Postgres: no Windows, nativo via `host.docker.internal` (ou o container irmão com
+`CRM_DOCKER_DB_HOST=postgres`); na VPS, container
 irmão `crm-postgres` quando `CRM_DOCKER_DB_HOST=crm-postgres` (`src/lib/worker-docker-env.ts`).
 Sessão e mídia ficam nos volumes `data/whatsapp-auth/` e `data/media/`. Fallback de debug:
 `npm run worker` na pasta CRM — **nunca** junto com o container (lock Redis).
@@ -499,6 +524,7 @@ QR **não** abre nesta tela: conectar em `/whatsapp`. Iniciar recusa conta desco
 | Aba / seção | Campo | O que é | Obrigatório | De onde vem | Regra / bloqueio | Onde olhar |
 | --- | --- | --- | --- | --- | --- | --- |
 | Público | Filtros / `ids` | Recorte da base ou lista escolhida | Não | `GET /api/campaigns/audience` | Sem `ids` o filtro inteiro dispara; com `ids` só esses leads. Só WhatsApp entra na fila | `campaign-detail-screen.tsx`, `buildLeadWhere` |
+| Público | Números únicos | WhatsApp distintos do público | — | `audience.uniqueWhatsapp` | Um número = uma mensagem. **Vão receber** sai daqui, não de **Com WhatsApp**, porque é isso que a materialização cria | `countUniqueWhatsapp`, `selectRecipients` |
 | Público | Incluir na campanha | Cadastro manual no rascunho | Não | `POST /api/leads` | Grava o contato e coloca o id em `audienceFilter.ids` | `manual-contact-form.tsx` |
 | Quantidade | Enviar para no máximo | Primeiros N elegíveis do rascunho | Não (vazio = todos) | `Campaign.recipientLimit` | Inteiro 1–100000; ordem por `id`. Só o primeiro lote. UI estima `ceil(N/5)` min | `takeRecipientLimit`, `estimateCampaignMinutes` |
 | Próximo lote | Adicionar mais | Novos destinatários na mesma campanha | Não | `POST /api/campaigns/:id/recipients` | Recusa rascunho e cancelada. Exclui `leadId` já materializado (`nextRecipientBatch`). Pausada: cria `PENDING` e espera Retomar. Concluída volta a `RUNNING` | `addCampaignRecipients` |
@@ -508,6 +534,10 @@ QR **não** abre nesta tela: conectar em `/whatsapp`. Iniciar recusa conta desco
 | Retorno | Esperar (horas) | Espera após a primeira mensagem | Sim (default 2) | `Campaign.followUpDelayHours` | Delayed job BullMQ. **Disparar retorno agora** é catch-up. Pausada: Retomar reagenda | `campaign-detail-screen.tsx` |
 | Distribuição | routingMode | Quem assume resposta | Sim (default Manual) | enum | MANUAL / CURRENT_OWNER / RULES / ROUND_ROBIN | `constants/campaign.ts` |
 | Conta WhatsApp | Conta que envia | Sessão do disparo | Sim para iniciar | `GET /api/whatsapp/accounts` | CONNECTED; sem LEGACY_MANUAL | `isConnectedSendableAccount` |
+| Respostas automáticas | Ativada | Liga ou desliga as regras daquela campanha | Não (default desligada) | `Campaign.autoReplyEnabled` | Continua após concluir/cancelar a campanha até o gestor desligar | `campaign-auto-reply-section.tsx` |
+| Respostas automáticas | Quando a resposta / Valor esperado | Regra ordenada: Igual a, Contém ou alternativas | Sim para salvar | `CampaignAutoReplyRule` | Ignora caixa, acentos e espaços repetidos; primeira regra compatível vence | `matchesAutoReplyRule` |
+| Respostas automáticas | Responder com / Mensagem | Template existente ou texto próprio | Sim | template ou corpo persistido | Cada destinatário recebe no máximo uma resposta automática por campanha | `processCampaignAutoReply` |
+| Respostas automáticas | Se nenhuma regra corresponder | Resposta padrão por template ou texto | Sim | campanha | Também encerra a automação daquele destinatário | `processCampaignAutoReply` |
 
 | Ação | API | Código |
 | --- | --- | --- |
@@ -516,10 +546,41 @@ QR **não** abre nesta tela: conectar em `/whatsapp`. Iniciar recusa conta desco
 | Editar rascunho | `PATCH /api/campaigns/:id` | inclui `recipientLimit` |
 | Template / atraso de retorno | `PATCH /api/campaigns/:id` | `followUpTemplateId` e `followUpDelayHours` aceitos depois do rascunho. O template da primeira onda continua congelado. |
 | Iniciar / pausar / retomar / cancelar | `POST .../start\|pause\|resume\|cancel` | BullMQ; exige Redis; 0 destinatários = 422. `start` também reenfileira `PENDING`/`QUEUED` se o status já for RUNNING (start anterior falhou no meio). Retomar reagenda retorno automático com o delay restante. |
-| Adicionar lote | `POST .../recipients` | ADMIN/MANAGER. `{ count }`. Mesmo rate limit de início. Recusa rascunho e cancelada. Sem lista de IDs no body — o servidor corta quem já está na campanha. |
+| Adicionar lote | `POST .../recipients` | ADMIN/MANAGER. `{ count }`. Mesmo rate limit de início. Recusa rascunho e cancelada. Sem lista de IDs no body — o servidor corta quem já está na campanha, por `leadId` **e por número** (`findCampaignRecipientPhones`). |
 | Disparar retorno | `POST .../follow-up` | ADMIN/MANAGER. Catch-up. Mesmo rate limit de início. Mesma fila `campaign-send` (não soma 5+5). Recusa rascunho, pausada e cancelada. Template de retorno ≠ primeiro. Recalcula elegíveis no servidor (sem lista de IDs no body). Pausada: **Retomar** antes. |
 | Métricas | `GET .../metrics` | COUNT recipients + funil Lead + `remainingEligible` + `followUpEligible` / `followUpWaitingDelay` / `followUpSent` / `followUpFailed` |
 | Destinatários | `GET/POST .../recipients` | tabela densa server-side; `GET` aceita `status`; `POST` adiciona lote |
+| Respostas automáticas | `GET/PATCH .../auto-reply` | ADMIN/MANAGER. Valida no servidor regras, templates ativos e exatamente uma fonte de resposta (template ou texto). |
+
+#### Um número = uma mensagem
+
+`materializeRecipients` → `selectRecipients` (`src/server/queue/campaign-helpers.ts`, puro e
+testado). O mesmo WhatsApp aparece em mais de um lead — a empresa da lista da Receita e o
+contato avulso da mesma pessoa vindo de uma lista de telefone. Sem deduplicação por número a
+pessoa receberia a campanha duas vezes.
+
+Ordem das regras, e ela importa:
+
+1. **opt-out sai primeiro**, para o número em opt-out não gastar a vaga;
+2. **número repetido sai depois** — fica o primeiro candidato, com o público ordenado por
+   `Lead.id`, então a escolha é estável entre execuções;
+3. `leadId` já na campanha sai;
+4. só então o teto de `recipientLimit` é aplicado, **sobre números únicos**.
+
+#### Opt-out é do número, não do lead
+
+`src/server/services/opt-out.service.ts`. `OptOut` tem chave única `[leadId, phone]`, mas quem
+pediu para sair pediu para sair do **número**: checar `leadId + phone` deixaria o disparo
+passar pelo outro lead que carrega o mesmo WhatsApp.
+
+| Onde | Função |
+| --- | --- |
+| Materialização | `optedOutPhoneSet(numeros)` — `IN` em lotes de 5.000 |
+| Envio e retorno (worker) | `isPhoneOptedOut(recipient.phone)` |
+| Contagem do público | `countOptedOutInAudience` — conta números distintos, não linhas de `opt_outs` |
+
+`opt_outs.phone` e `campaign_recipients.phone` guardam o número nacional (sem o 55). Registro
+antigo com 55 na frente continua valendo: os dois lados passam por `nationalPhoneDigits`.
 
 UI: `src/features/campaigns/*`. Worker: `src/server/queue/processors/campaign-send.ts` +
 `workers/campaign-worker.ts` (teto 5/min). Em envio, a tela mostra ritmo e minutos restantes
@@ -646,7 +707,7 @@ Código: `src/features/admin/supervision-screen.tsx`,
 | Campo | Regra |
 | --- | --- |
 | CNPJ | só dígitos, 14 posições, dígito verificador conferido. Inválido rejeita a linha |
-| `phones` | string separada por vírgula no formato `DDD-numero`, cada um validado |
+| `phones` | string separada por vírgula no formato `DDD-numero`, cada um validado. Fonte que traz DDD e número em colunas separadas (`DDD1`/`Telefone1`, `DDD2`/`Telefone2`) é juntada na mesma lista, nessa ordem, sem repetir número |
 | `whatsapp` | primeiro celular da lista (DDD válido + 9 dígitos começando em 9). Contato Inbox/manual grava o mesmo número em `whatsapp` e `telefone`. |
 | `telefone` | primeiro telefone válido da lista |
 | `email` | minúsculas, formato validado. Inválido é **descartado com aviso**, não rejeita a linha |
@@ -672,6 +733,56 @@ Comportamento do job:
   a execução seguinte não reprocessa o que já foi gravado.
 - **Filtro de ativas.** Ligado por padrão. O resumo mostra quantas empresas ficaram de fora e por
   qual situação cadastral.
+- **Preenchimento de contato em CNPJ que já existe** (`fillExistingContacts`, desligado por
+  padrão — a tela `/import` continua só inserindo). Ligado, o job completa `telefone`,
+  `whatsapp` e `email` **só quando estão vazios** e acrescenta telefone ausente em `phones`.
+  Nunca substitui valor existente e nunca remove telefone: o que está no banco pode ter vindo
+  de conversa real, a planilha é a fonte mais fraca das duas. Sem campo vazio e sem telefone
+  novo não há `UPDATE`, então a segunda execução não altera nada.
+
+### 7.1 Pacote de planilha + listas de telefone avulso
+
+`npm run import:telefones -- preview|apply` (`scripts/import-telefones.ts`) carrega uma pasta
+com a planilha de empresas e listas de telefone sem CNPJ. `preview` só lê o banco; `apply`
+roda a mesma prévia, exige que as validações passem e então grava.
+
+| Peça | Arquivo | Papel |
+| --- | --- | --- |
+| Normalização de número da fonte | `src/lib/contact-source.ts` | celular / fixo / inválido com motivo, junção DDD+número, nome de fallback |
+| Leitura de CSV | `src/server/services/import/delimited.ts` | separador detectado (`;` `,` tab), UTF-8 com BOM ou Windows-1252, cabeçalho opcional |
+| Listas sem CNPJ | `src/server/services/contact-import.service.ts` | plano (leitura pura) + gravação |
+| Planilha de empresa | `src/server/services/import.service.ts` | o mesmo serviço da tela `/import` |
+
+Regras:
+
+- **Celular × fixo.** Só vira `whatsapp` o celular válido: DDD existente + 11 dígitos com o
+  número começando em 9. Fixo entra apenas em `telefone` e fica **fora de público de
+  campanha**, que lê `whatsapp`.
+- **Nada é adivinhado.** Número fora do padrão é rejeitado e contado por motivo. O comando não
+  insere o nono dígito nem troca DDD. `looksLikeLegacyMobile` existe só para **relatar**
+  quantos fixos de 10 dígitos têm número começando em 9 (formato de celular de antes da
+  migração do nono dígito) — eles continuam fixo.
+- **Deduplicação por número nacional**, dentro do arquivo, entre arquivos e entre as versões
+  `.csv` e `.xlsx` da mesma lista. Arquivos são lidos em ordem alfabética, então o `origem`
+  de um número repetido é estável entre execuções. O primeiro nome encontrado fica; linha sem
+  nome não apaga nome.
+- **Vínculo com empresa.** Número que já está em `whatsapp`, `telefone` ou `phones` de um lead
+  com CNPJ válido pertence a essa empresa: não nasce contato avulso. Sendo celular e estando a
+  empresa sem `whatsapp`, o campo vazio é preenchido.
+- **Contato avulso.** O resto nasce com `cnpj = manualContactCnpj(numero)` — chave de 14
+  dígitos derivada do número que **nunca** passa em `isValidCnpj` (a listagem mostra `—`).
+  Por ser derivada do número, a carga é idempotente: `createMany` com `skipDuplicates`
+  reconhece o que já existe. `situacaoCadastral = 'ATIVA'`, igual a `createManualLead`: sem
+  isso o contato ficaria invisível no filtro padrão de `/leads` (`situacao=ATIVA`) e fora de
+  qualquer público de campanha. Nome: o da fonte ou `Contato importado • final XXXX`.
+- **Colisão de chave técnica** entre dois números diferentes aborta a gravação antes de
+  escrever qualquer coisa.
+- **A carga não cria campanha e não envia mensagem.**
+- **Relatório** por execução em `data/fontes-telefones/relatorios/` (fora do Git), com
+  contagem de aceitos, atualizados, repetidos, fixos e inválidos por motivo. Nenhuma lista de
+  telefone vai para o log: a amostra mostra no máximo o final de 4 dígitos.
+- As fontes ficam em `data/fontes-telefones/`, no `.gitignore`. Planilha de terceiro não entra
+  no Git.
 
 ## 8. Cache, auditoria e limites
 
@@ -838,6 +949,11 @@ HTTPS (Let's Encrypt) **não** está neste ambiente. Senha root e `.env` não en
 Resultado na entrega 0.16.19 — **Excluir conversa na Inbox**: botão **Excluir** no cabeçalho
 da conversa, confirmação com o nome, `DELETE /api/conversations/:id` (quem escreve na conversa).
 Apaga conversa e mensagens no CRM; lead e WhatsApp do contato permanecem.
+Resultado na entrega 0.17.0 — **Respostas automáticas**: a campanha aceita regras ordenadas
+por resposta exata, trecho ou alternativas. A primeira regra compatível envia imediatamente um
+template ou texto; sem correspondência, envia a resposta padrão. O processamento acontece após
+gravar a mensagem recebida, usa a mesma conversa/conta e a unicidade por destinatário impede
+duplicidade. ADMIN/MANAGER configuram; automação começa desligada e permanece até desligamento manual.
 Resultado na entrega 0.16.18 — **Uma fonte**: CRM e disparo são o mesmo código. `deploy/`,
 `docker-compose.vps.yml` e o runbook vivem em `CRM/`. Publicar no GitHub:
 `npm run publish:github` (não editar `DISPARO DE MSG/` à mão). `npm start` e PM2 escutam

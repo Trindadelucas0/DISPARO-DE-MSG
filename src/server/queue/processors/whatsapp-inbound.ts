@@ -6,6 +6,7 @@ import { leadMatchesImportedPhone, phoneMatchVariants } from '@/lib/whatsapp/con
 import { parsePhone } from '@/lib/validation/phone';
 import type { WhatsappInboundJob } from '@/server/queue/names';
 import { enqueueConversationRouting } from '@/server/queue/enqueue';
+import { processCampaignAutoReply } from '@/server/services/campaign-auto-reply.service';
 
 /**
  * Inbound. Número conhecido liga a conversa ao lead.
@@ -137,7 +138,7 @@ export async function processWhatsappInboundJob(job: WhatsappInboundJob): Promis
     });
   }
 
-  await prisma.message.create({
+  const inboundMessage = await prisma.message.create({
     data: {
       conversationId: conversation.id,
       direction: 'INBOUND',
@@ -159,6 +160,16 @@ export async function processWhatsappInboundJob(job: WhatsappInboundJob): Promis
         status: { in: ['SENT', 'DELIVERED', 'QUEUED'] },
       },
       data: { status: 'RESPONDED', processedAt: new Date() },
+    });
+
+    await processCampaignAutoReply({
+      conversationId: conversation.id,
+      campaignId: conversation.campaignId,
+      leadId: lead.id,
+      inboundMessageId: inboundMessage.id,
+      inboundBody: body,
+    }).catch((error: Error) => {
+      console.error('[whatsapp-inbound] resposta automática:', error.message);
     });
   }
 

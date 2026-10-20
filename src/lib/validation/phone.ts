@@ -18,6 +18,12 @@ const VALID_DDD = new Set([
   79, 81, 82, 83, 84, 85, 86, 87, 88, 89, 91, 92, 93, 94, 95, 96, 97, 98, 99,
 ]);
 
+/** DDD que existe no plano de numeração brasileiro. */
+export function isValidDdd(ddd: string | null | undefined): boolean {
+  const digits = onlyDigits(String(ddd ?? ""));
+  return digits.length === 2 && VALID_DDD.has(Number(digits));
+}
+
 export interface ParsedPhone {
   /** Somente dígitos, com DDD: 10 (fixo) ou 11 (celular). */
   readonly digits: string;

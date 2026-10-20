@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
+import { joinDddPhone } from '@/lib/contact-source';
 import { isValidCnpj, normalizeCnpj, onlyDigits } from '@/lib/validation/cnpj';
-import { firstMobile, parsePhoneList } from '@/lib/validation/phone';
+import { firstMobile, type ParsedPhone, parsePhone, parsePhoneList } from '@/lib/validation/phone';
 import { type ColumnMapping, type ImportField } from '@/server/services/import/columns';
 
 /**
@@ -10,6 +11,8 @@ import { type ColumnMapping, type ImportField } from '@/server/services/import/c
  * Regras confirmadas com os arquivos de origem:
  * - CNPJ vem sem máscara, 14 dígitos;
  * - `Telefones` é `DDD-numero` separado por vírgula (1 ou 2 por lead);
+ * - a lista empresarial não tem `Telefones`: traz `DDD1`/`Telefone1` e
+ *   `DDD2`/`Telefone2` em colunas separadas, juntadas aqui na mesma lista;
  * - datas vêm como `YYYY-MM-DD` ou `YYYY-MM-DD HH:mm:ss`;
  * - `Capital Social` vem como `20000.00`;
  * - `Optante MEI` / `Optante Simples` vêm como `Sim` / `Não` / vazio;
@@ -133,6 +136,12 @@ export interface NormalizedLead {
   rawImport: Record<string, string> | null;
 }
 
+/** Pares DDD/número da lista empresarial, na ordem em que entram na lista. */
+const PHONE_PAIR_FIELDS: readonly (readonly [ImportField, ImportField])[] = [
+  ['ddd1', 'telefone1'],
+  ['ddd2', 'telefone2'],
+];
+
 const emailSchema = z.string().email();
 
 export interface NormalizeContext {
@@ -186,7 +195,18 @@ export function normalizeRow(
   }
 
   // --- Telefones ------------------------------------------------------------
-  const parsedPhones = parsePhoneList(get('telefones'));
+  // Uma lista só, na ordem: coluna `Telefones`, depois o par 1, depois o par 2.
+  const parsedPhones: ParsedPhone[] = [];
+  const seenPhones = new Set<string>();
+  const addPhone = (parsed: ParsedPhone | null): boolean => {
+    if (!parsed || seenPhones.has(parsed.digits)) return parsed !== null;
+    seenPhones.add(parsed.digits);
+    parsedPhones.push(parsed);
+    return true;
+  };
+
+  for (const parsed of parsePhoneList(get('telefones'))) addPhone(parsed);
+
   const rawPhoneColumn = text(get('telefones'));
   if (rawPhoneColumn && parsedPhones.length === 0) {
     warnings.push({
@@ -194,6 +214,18 @@ export function normalizeRow(
       reason: `Nenhum telefone válido em "${rawPhoneColumn}"; lead importado sem telefone.`,
     });
   }
+
+  for (const [dddField, numberField] of PHONE_PAIR_FIELDS) {
+    const joined = joinDddPhone(get(dddField), get(numberField));
+    if (joined.length === 0) continue;
+    if (!addPhone(parsePhone(joined))) {
+      warnings.push({
+        field: numberField,
+        reason: `Telefone fora do padrão brasileiro descartado: "${joined}".`,
+      });
+    }
+  }
+
   const mobile = firstMobile(parsedPhones);
 
   // --- E-mail ---------------------------------------------------------------

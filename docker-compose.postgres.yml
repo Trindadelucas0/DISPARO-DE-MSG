@@ -2,7 +2,11 @@
 # A VPS em /opt/disparo-de-msg usa docker-compose.vps.yml (volume crm_pg_data).
 # Este arquivo cria crm_postgres_data: subir na VPS atual = banco vazio.
 #
-# Windows local: Postgres nativo na 5432; não use este arquivo.
+# Windows local onde a 5432 pertence ao serviço nativo postgresql-x64-18: defina
+# CRM_DB_PORT no .env (ex.: 5442) e suba junto do Redis/worker com
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
+# (ou COMPOSE_FILE=docker-compose.yml:docker-compose.postgres.yml no .env).
+# A porta dentro do container segue 5432: só a publicada muda.
 
 services:
   postgres:
@@ -14,7 +18,7 @@ services:
       POSTGRES_USER: crm
       POSTGRES_PASSWORD: ${CRM_DB_PASSWORD:?defina CRM_DB_PASSWORD no .env}
     ports:
-      - '127.0.0.1:5432:5432'
+      - '127.0.0.1:${CRM_DB_PORT:-5432}:5432'
     volumes:
       - crm_postgres_data:/var/lib/postgresql/data
     healthcheck:

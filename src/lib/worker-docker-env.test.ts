@@ -34,11 +34,38 @@ describe('rewriteDatabaseUrlForDocker', () => {
       ),
     ).toBe('postgresql://u:p@crm-postgres:5432/crm');
   });
+
+  it('no banco irmão usa a porta do container, não a publicada na máquina', () => {
+    // Local: Postgres em container publicado na 5442 porque a 5432 é do
+    // serviço nativo. Dentro da rede do Compose quem atende é a 5432.
+    expect(
+      rewriteDatabaseUrlForDocker('postgresql://u:p@127.0.0.1:5442/crm', 'postgres'),
+    ).toBe('postgresql://u:p@postgres:5432/crm');
+  });
+
+  it('aceita porta própria do container irmão', () => {
+    expect(
+      rewriteDatabaseUrlForDocker('postgresql://u:p@127.0.0.1:5442/crm', 'postgres', '6543'),
+    ).toBe('postgresql://u:p@postgres:6543/crm');
+  });
+
+  it('com host.docker.internal a porta publicada continua valendo', () => {
+    expect(rewriteDatabaseUrlForDocker('postgresql://u:p@127.0.0.1:5442/crm')).toBe(
+      'postgresql://u:p@host.docker.internal:5442/crm',
+    );
+  });
+
+  it('não confunde porta na senha com a porta do host', () => {
+    expect(
+      rewriteDatabaseUrlForDocker('postgresql://u:a@b:5432@127.0.0.1:5442/crm', 'postgres'),
+    ).toBe('postgresql://u:a@b:5432@postgres:5432/crm');
+  });
 });
 
 describe('applyDockerWorkerEnv', () => {
   it('não mexe nas variáveis fora do container', () => {
     const env: NodeJS.ProcessEnv = {
+      NODE_ENV: 'test',
       DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/crm',
       REDIS_URL: 'redis://127.0.0.1:6380',
     };
@@ -49,6 +76,7 @@ describe('applyDockerWorkerEnv', () => {
 
   it('no Compose aponta Postgres para o host e Redis para o serviço', () => {
     const env: NodeJS.ProcessEnv = {
+      NODE_ENV: 'test',
       CRM_WORKER_IN_DOCKER: '1',
       DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/crm',
       REDIS_URL: 'redis://127.0.0.1:6380',
@@ -60,6 +88,7 @@ describe('applyDockerWorkerEnv', () => {
 
   it('no Compose com Postgres irmão usa CRM_DOCKER_DB_HOST', () => {
     const env: NodeJS.ProcessEnv = {
+      NODE_ENV: 'test',
       CRM_WORKER_IN_DOCKER: '1',
       CRM_DOCKER_DB_HOST: 'crm-postgres',
       DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/crm',
@@ -67,5 +96,17 @@ describe('applyDockerWorkerEnv', () => {
     };
     applyDockerWorkerEnv(env);
     expect(env.DATABASE_URL).toBe('postgresql://u:p@crm-postgres:5432/crm');
+  });
+
+  it('no Compose com Postgres irmão em porta publicada diferente, corrige a porta', () => {
+    const env: NodeJS.ProcessEnv = {
+      NODE_ENV: 'test',
+      CRM_WORKER_IN_DOCKER: '1',
+      CRM_DOCKER_DB_HOST: 'postgres',
+      DATABASE_URL: 'postgresql://u:p@127.0.0.1:5442/crm',
+      REDIS_URL: 'redis://127.0.0.1:6380',
+    };
+    applyDockerWorkerEnv(env);
+    expect(env.DATABASE_URL).toBe('postgresql://u:p@postgres:5432/crm');
   });
 });

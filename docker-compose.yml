@@ -44,6 +44,9 @@ services:
       CRM_WORKER_IN_DOCKER: '1'
       REDIS_URL: redis://redis:6379
       CRM_DOCKER_DB_HOST: ${CRM_DOCKER_DB_HOST:-}
+      # Porta do Postgres irmão DENTRO da rede do Compose, não a publicada
+      # na máquina (CRM_DB_PORT). Só vale quando CRM_DOCKER_DB_HOST está setado.
+      CRM_DOCKER_DB_PORT: ${CRM_DOCKER_DB_PORT:-5432}
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     volumes:

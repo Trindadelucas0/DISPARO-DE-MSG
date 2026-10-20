@@ -30,6 +30,7 @@ id_ed25519
 dump.rdb
 
 # planilhas de origem (dados de terceiros, não versionar)
+data/fontes-telefones/
 *.xlsx
 *.xls
 *.zip
@@ -85,6 +86,7 @@ playwright/.cache/
 *.pem
 *.key
 *.sql
+!prisma/migrations/**/migration.sql
 *.sql.gz
 *.dump
 node_modules/

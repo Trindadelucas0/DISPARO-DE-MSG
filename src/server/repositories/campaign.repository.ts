@@ -84,6 +84,15 @@ export async function findCampaignRecipientLeadIds(campaignId: string): Promise<
   return rows.map((row) => row.leadId);
 }
 
+/** Números já na campanha: barram o mesmo WhatsApp vindo por outro lead. */
+export async function findCampaignRecipientPhones(campaignId: string): Promise<string[]> {
+  const rows = await prisma.campaignRecipient.findMany({
+    where: { campaignId },
+    select: { phone: true },
+  });
+  return rows.map((row) => row.phone);
+}
+
 export async function createRecipients(
   rows: ReadonlyArray<{
     campaignId: string;

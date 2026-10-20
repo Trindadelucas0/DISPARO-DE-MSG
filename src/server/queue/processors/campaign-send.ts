@@ -18,6 +18,7 @@ import { buildLeadTemplateVars, followUpIdempotencyKey } from '@/server/queue/ca
 import type { CampaignSendJob } from '@/server/queue/names';
 import { enqueueCampaignSend, enqueueConversationRouting } from '@/server/queue/enqueue';
 import { findOpenConversationForCampaign } from '@/server/repositories/conversation.repository';
+import { isPhoneOptedOut } from '@/server/services/opt-out.service';
 import { markLeadContactedOnOutbound } from '@/server/services/lead-funnel';
 
 type RecipientWithCampaign = NonNullable<Awaited<ReturnType<typeof loadRecipient>>>;
@@ -73,11 +74,8 @@ async function processInitialSend(
   }
 
   if (campaign.excludeOptOut) {
-    const opted = await prisma.optOut.findUnique({
-      where: {
-        leadId_phone: { leadId: recipient.leadId, phone: recipient.phone },
-      },
-    });
+    // Opt-out do NÚMERO: o mesmo WhatsApp pode ter pedido para sair por outro lead.
+    const opted = await isPhoneOptedOut(recipient.phone);
     if (opted) {
       await prisma.campaignRecipient.update({
         where: { id: recipient.id },
@@ -204,11 +202,8 @@ async function processFollowUpSend(
   }
 
   if (campaign.excludeOptOut) {
-    const opted = await prisma.optOut.findUnique({
-      where: {
-        leadId_phone: { leadId: recipient.leadId, phone: recipient.phone },
-      },
-    });
+    // Opt-out do NÚMERO: o mesmo WhatsApp pode ter pedido para sair por outro lead.
+    const opted = await isPhoneOptedOut(recipient.phone);
     if (opted) {
       await prisma.campaignRecipient.update({
         where: { id: recipient.id },
