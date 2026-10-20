@@ -1082,16 +1082,23 @@ em `data/fontes-telefones/relatorios/`, também fora do Git.
    `Contato importado • final XXXX`. O CNPJ desse contato é uma chave técnica derivada do
    próprio número: a tela mostra **—** no CNPJ, e rodar o comando de novo não duplica.
 
-**Celular, fixo e inválido.** Só vira WhatsApp o **celular** válido: DDD existente + nono
-dígito (11 dígitos, número começando em 9). Fixo entra apenas em **Telefone** e **fica fora
-de público de campanha**. Número fora do padrão é **rejeitado e relatado**, nunca
-"corrigido": o comando não inventa o nono dígito nem troca DDD.
+**Celular, fixo e o nono dígito.** Só vira WhatsApp o **celular**. Fixo entra apenas em
+**Telefone** e **fica fora de público de campanha**.
 
-Por isso o relatório traz a linha **com formato de celular antigo**: fixo de 10 dígitos cujo
-número começa em 9 (ex.: `61 9251-1651`) é o formato de celular de antes da migração para o
-nono dígito. Esses números entram como fixo e não recebem campanha. Transformá-los em
-celular seria adivinhar duas coisas que não estão no dado — que o número é celular e que
-continua ativo.
+As fontes deste pacote são anteriores à migração do nono dígito: os celulares vêm com oito
+dígitos (ex.: `61 9251-1651`). O comando converte para o formato atual (`61 99251-1651`) e é
+esse número que vai para o WhatsApp. **Telefone** continua mostrando o número como veio na
+planilha, então nada se perde.
+
+Isso não é chute. No plano de numeração brasileiro, o primeiro dígito do número diz o que
+ele é: **2, 3, 4 e 5 são fixo**; **6, 7, 8 e 9 eram celular**. A migração da Anatel foi
+exatamente pôr um 9 na frente do número de oito dígitos do celular. Por isso o relatório traz
+a linha **recuperado do formato antigo** — é a maior parte desta base.
+
+Duas garantias: número fora do padrão continua **rejeitado e relatado** (truncado, DDD que não
+existe, número de outro país), e na hora do disparo o sistema **confere o número no WhatsApp**
+antes de mandar. Número convertido que não estiver lá falha como "Este número não está no
+WhatsApp" em vez de virar mensagem para a pessoa errada.
 
 **Rodar duas vezes não muda nada.** A segunda execução reporta tudo como "já existia" e não
 cria nem altera lead.

@@ -1,8 +1,7 @@
 import { z } from 'zod';
 
-import { joinDddPhone } from '@/lib/contact-source';
+import { joinDddPhone, normalizeSourcePhone, type SourcePhone } from '@/lib/contact-source';
 import { isValidCnpj, normalizeCnpj, onlyDigits } from '@/lib/validation/cnpj';
-import { firstMobile, type ParsedPhone, parsePhone, parsePhoneList } from '@/lib/validation/phone';
 import { type ColumnMapping, type ImportField } from '@/server/services/import/columns';
 
 /**
@@ -11,6 +10,8 @@ import { type ColumnMapping, type ImportField } from '@/server/services/import/c
  * Regras confirmadas com os arquivos de origem:
  * - CNPJ vem sem máscara, 14 dígitos;
  * - `Telefones` é `DDD-numero` separado por vírgula (1 ou 2 por lead);
+ * - os telefones são anteriores à migração do nono dígito: celular vem com 8
+ *   dígitos e é convertido aqui (ver `normalizeSourcePhone`);
  * - a lista empresarial não tem `Telefones`: traz `DDD1`/`Telefone1` e
  *   `DDD2`/`Telefone2` em colunas separadas, juntadas aqui na mesma lista;
  * - datas vêm como `YYYY-MM-DD` ou `YYYY-MM-DD HH:mm:ss`;
@@ -134,6 +135,8 @@ export interface NormalizedLead {
   optanteSimples: boolean;
   optanteMei: boolean;
   rawImport: Record<string, string> | null;
+  /** Quantos telefones deste lead vieram no formato antigo e ganharam o nono dígito. */
+  legacyUpgradedPhones: number;
 }
 
 /** Pares DDD/número da lista empresarial, na ordem em que entram na lista. */
@@ -196,16 +199,25 @@ export function normalizeRow(
 
   // --- Telefones ------------------------------------------------------------
   // Uma lista só, na ordem: coluna `Telefones`, depois o par 1, depois o par 2.
-  const parsedPhones: ParsedPhone[] = [];
+  // `normalizeSourcePhone` já devolve o celular antigo no formato atual, com o
+  // nono dígito — a fonte é anterior à migração da Anatel.
+  const parsedPhones: SourcePhone[] = [];
   const seenPhones = new Set<string>();
-  const addPhone = (parsed: ParsedPhone | null): boolean => {
-    if (!parsed || seenPhones.has(parsed.digits)) return parsed !== null;
-    seenPhones.add(parsed.digits);
-    parsedPhones.push(parsed);
+  let legacyUpgraded = 0;
+
+  const addPhone = (raw: string): boolean => {
+    const phone = normalizeSourcePhone(raw);
+    if (phone.kind === 'invalid' || !phone.digits) return false;
+    if (seenPhones.has(phone.digits)) return true;
+    seenPhones.add(phone.digits);
+    parsedPhones.push(phone);
+    if (phone.legacyUpgraded) legacyUpgraded += 1;
     return true;
   };
 
-  for (const parsed of parsePhoneList(get('telefones'))) addPhone(parsed);
+  for (const chunk of String(get('telefones') ?? '').split(/[,;/]/)) {
+    if (chunk.trim().length > 0) addPhone(chunk);
+  }
 
   const rawPhoneColumn = text(get('telefones'));
   if (rawPhoneColumn && parsedPhones.length === 0) {
@@ -218,7 +230,7 @@ export function normalizeRow(
   for (const [dddField, numberField] of PHONE_PAIR_FIELDS) {
     const joined = joinDddPhone(get(dddField), get(numberField));
     if (joined.length === 0) continue;
-    if (!addPhone(parsePhone(joined))) {
+    if (!addPhone(joined)) {
       warnings.push({
         field: numberField,
         reason: `Telefone fora do padrão brasileiro descartado: "${joined}".`,
@@ -226,7 +238,7 @@ export function normalizeRow(
     }
   }
 
-  const mobile = firstMobile(parsedPhones);
+  const mobile = parsedPhones.find((phone) => phone.kind === 'mobile') ?? null;
 
   // --- E-mail ---------------------------------------------------------------
   const rawEmail = text(get('email'));
@@ -274,7 +286,8 @@ export function normalizeRow(
     nomeFantasia: text(get('nomeFantasia')),
     telefone: parsedPhones[0]?.digits ?? null,
     whatsapp: mobile?.digits ?? null,
-    phones: parsedPhones.map((phone) => phone.digits),
+    phones: parsedPhones.map((phone) => phone.digits as string),
+    legacyUpgradedPhones: legacyUpgraded,
     email,
     estado,
     cidade: text(get('cidade')),
@@ -347,4 +360,5 @@ export const normalizedLeadSchema = z.object({
   optanteSimples: z.boolean(),
   optanteMei: z.boolean(),
   rawImport: z.record(z.string()).nullable(),
+  legacyUpgradedPhones: z.number().int().nonnegative(),
 });

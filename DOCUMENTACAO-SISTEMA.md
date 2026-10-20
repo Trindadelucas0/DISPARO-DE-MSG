@@ -755,13 +755,23 @@ roda a mesma prévia, exige que as validações passem e então grava.
 
 Regras:
 
-- **Celular × fixo.** Só vira `whatsapp` o celular válido: DDD existente + 11 dígitos com o
-  número começando em 9. Fixo entra apenas em `telefone` e fica **fora de público de
-  campanha**, que lê `whatsapp`.
-- **Nada é adivinhado.** Número fora do padrão é rejeitado e contado por motivo. O comando não
-  insere o nono dígito nem troca DDD. `looksLikeLegacyMobile` existe só para **relatar**
-  quantos fixos de 10 dígitos têm número começando em 9 (formato de celular de antes da
-  migração do nono dígito) — eles continuam fixo.
+- **Celular × fixo pelo plano de numeração.** No número de oito dígitos, o primeiro dígito
+  diz o que ele é: 2, 3, 4 e 5 são fixo; 6, 7, 8 e 9 eram celular (`MOBILE_PREFIXES` em
+  `contact-source.ts`). Só celular vira `whatsapp`; fixo fica em `telefone` e fora de público
+  de campanha.
+- **Conversão do nono dígito.** As fontes são anteriores à migração da Anatel, que consistiu
+  em pôr um 9 na frente do número de oito dígitos do celular. `upgradeLegacyMobile` faz
+  exatamente isso: `6192511651` → `61992511651`. É o número convertido que vai para
+  `whatsapp`; `telefone` guarda o número como veio na fonte. Sem a conversão, nesta base só
+  120 de 48.641 leads teriam WhatsApp; com ela, 22.050.
+- **Reencontrar o lead nas duas formas.** `phoneLookupVariants` procura o celular no formato
+  atual e no antigo. É o que impede a carga de recriar, duplicado, um contato gravado antes da
+  conversão. `outboundWhatsAppJidCandidates` faz o mesmo no envio.
+- **Nada é remendado além disso.** Número truncado, DDD inexistente e número de outro país
+  continuam rejeitados e contados por motivo — não completamos número nem trocamos DDD.
+- **Rede de segurança no envio.** `baileys-session.ts` chama `onWhatsApp` antes de mandar e
+  `resolveOutboundWhatsAppJid` recusa com "Este número não está no WhatsApp". Número
+  convertido que não exista falha como `FAILED`, não vira mensagem para a pessoa errada.
 - **Deduplicação por número nacional**, dentro do arquivo, entre arquivos e entre as versões
   `.csv` e `.xlsx` da mesma lista. Arquivos são lidos em ordem alfabética, então o `origem`
   de um número repetido é estável entre execuções. O primeiro nome encontrado fica; linha sem

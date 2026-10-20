@@ -125,8 +125,8 @@ function reportCompany(fileName: string, preview: ImportPreview): void {
   row('repetidas dentro do arquivo', preview.duplicatesInFile.length);
   row('CNPJ que já existe no banco', preview.existingInDatabase);
   row('com celular (entra em campanha)', preview.withWhatsapp);
+  row('  celular recuperado do formato antigo', preview.legacyUpgraded);
   row('só fixo (fica fora de campanha)', preview.landlineOnly);
-  row('  com formato de celular antigo', preview.landlineLegacyShape);
   row('sem telefone nenhum', preview.withoutPhone);
   row('com campo descartado (aviso)', preview.warningRows);
   if (preview.missingRequired.length > 0) {
@@ -148,8 +148,8 @@ function reportContacts(plan: ContactImportPlan): void {
   row('números inválidos (rejeitados)', plan.totals.invalid);
   row('números únicos aproveitados', plan.totals.uniquePhones);
   row('  celular (entra em campanha)', plan.totals.mobile);
+  row('    recuperado do formato antigo', plan.totals.legacyUpgraded);
   row('  fixo (fica fora de campanha)', plan.totals.landline);
-  row('    com formato de celular antigo', plan.totals.landlineLegacyShape);
   row('já são de empresa cadastrada', plan.totals.linkedToCompany);
   row('  empresa que ganha WhatsApp vazio', plan.totals.fillCompanyWhatsapp);
   row('já são contato cadastrado', plan.totals.existingContact);
@@ -328,6 +328,7 @@ async function main(): Promise<void> {
     say('--- listas de telefone avulso');
     row('contatos criados', result.created);
     row('empresas com WhatsApp preenchido', result.filledCompanyWhatsapp);
+    row('contatos com WhatsApp preenchido', result.filledContactWhatsapp);
     row('contatos que ganharam nome real', result.renamedPlaceholder);
     row('contatos com campo vazio completado', result.completedContact);
     row('ligados a empresa já cadastrada', replanned.totals.linkedToCompany);

@@ -4,8 +4,8 @@ import {
   cleanContactName,
   contactPhoneFields,
   fallbackContactName,
-  looksLikeLegacyMobile,
   normalizeSourcePhone,
+  phoneLookupVariants,
   type SourcePhone,
 } from '@/lib/contact-source';
 import type { Prisma } from '@prisma/client';
@@ -145,6 +145,8 @@ export interface ContactPlanEntry {
   readonly sourceFiles: readonly string[];
   readonly occurrences: number;
   readonly action: ContactAction;
+  /** O número veio com 8 dígitos e ganhou o nono dígito na normalização. */
+  readonly legacyUpgraded: boolean;
   readonly leadId: string | null;
   readonly leadLabel: string | null;
   readonly cnpj: string;
@@ -157,8 +159,8 @@ export interface ContactImportPlan {
     readonly uniquePhones: number;
     readonly mobile: number;
     readonly landline: number;
-    /** Dos fixos: quantos têm formato de celular antigo (sem o nono dígito). */
-    readonly landlineLegacyShape: number;
+    /** Celulares que vieram com 8 dígitos e ganharam o nono dígito. */
+    readonly legacyUpgraded: number;
     readonly invalid: number;
     readonly duplicateInSources: number;
     readonly toCreate: number;
@@ -178,6 +180,7 @@ export interface ContactImportPlan {
 interface Candidate {
   digits: string;
   kind: 'mobile' | 'landline';
+  legacyUpgraded: boolean;
   name: string | null;
   origem: string;
   files: Set<string>;
@@ -189,14 +192,31 @@ function leadLabel(row: { razaoSocial: string; cnpj: string }): string {
   return isValidCnpj(row.cnpj) ? row.razaoSocial : `${row.razaoSocial} (contato)`;
 }
 
+/**
+ * Acha o lead de cada número, procurando o celular nas DUAS formas: a atual,
+ * com o nono dígito, e a antiga, de oito.
+ *
+ * Sem isso, um contato gravado antes da conversão (`6192511651`) não seria
+ * reconhecido quando a fonte volta como `61992511651` e nasceria de novo,
+ * duplicado.
+ */
 async function findLeadsByPhone(digits: readonly string[]) {
   const found = new Map<
     string,
     { id: string; cnpj: string; razaoSocial: string; whatsapp: string | null; phones: string[] }
   >();
 
-  for (let index = 0; index < digits.length; index += LOOKUP_CHUNK) {
-    const chunk = digits.slice(index, index + LOOKUP_CHUNK);
+  // Cada forma do número aponta para o número canônico que a fonte trouxe.
+  const canonicalByVariant = new Map<string, string>();
+  for (const phone of digits) {
+    for (const variant of phoneLookupVariants(phone)) {
+      if (!canonicalByVariant.has(variant)) canonicalByVariant.set(variant, phone);
+    }
+  }
+  const lookup = [...canonicalByVariant.keys()];
+
+  for (let index = 0; index < lookup.length; index += LOOKUP_CHUNK) {
+    const chunk = lookup.slice(index, index + LOOKUP_CHUNK);
     const rows = await prisma.lead.findMany({
       where: {
         OR: [
@@ -209,15 +229,15 @@ async function findLeadsByPhone(digits: readonly string[]) {
       select: { id: true, cnpj: true, razaoSocial: true, whatsapp: true, telefone: true, phones: true },
     });
 
-    const wanted = new Set(chunk);
     for (const row of rows) {
       // O lead pode casar por mais de um dos campos; o primeiro por `id` fica.
       const owned = new Set<string>(row.phones);
       if (row.whatsapp) owned.add(row.whatsapp);
       if (row.telefone) owned.add(row.telefone);
       for (const phone of owned) {
-        if (!wanted.has(phone) || found.has(phone)) continue;
-        found.set(phone, {
+        const canonical = canonicalByVariant.get(phone);
+        if (!canonical || found.has(canonical)) continue;
+        found.set(canonical, {
           id: row.id,
           cnpj: row.cnpj,
           razaoSocial: row.razaoSocial,
@@ -270,6 +290,7 @@ export async function buildContactImportPlan(
       candidates.set(phone.digits, {
         digits: phone.digits,
         kind: phone.kind,
+        legacyUpgraded: phone.legacyUpgraded,
         name: row.name,
         origem: row.file,
         files: new Set([row.file]),
@@ -310,6 +331,7 @@ export async function buildContactImportPlan(
       sourceFiles: [...candidate.files].sort(),
       occurrences: candidate.occurrences,
       action,
+      legacyUpgraded: candidate.legacyUpgraded,
       leadId: lead?.id ?? null,
       leadLabel: lead ? leadLabel(lead) : null,
       cnpj,
@@ -326,9 +348,7 @@ export async function buildContactImportPlan(
       uniquePhones: entries.length,
       mobile: entries.filter((entry) => entry.kind === 'mobile').length,
       landline: entries.filter((entry) => entry.kind === 'landline').length,
-      landlineLegacyShape: entries.filter(
-        (entry) => entry.kind === 'landline' && looksLikeLegacyMobile(entry.digits),
-      ).length,
+      legacyUpgraded: entries.filter((entry) => entry.legacyUpgraded).length,
       invalid,
       duplicateInSources,
       toCreate: count('create'),
@@ -354,6 +374,8 @@ export async function buildContactImportPlan(
 export interface ContactImportResult {
   readonly created: number;
   readonly filledCompanyWhatsapp: number;
+  /** Contato que já existia e era fixo antes da conversão do nono dígito. */
+  readonly filledContactWhatsapp: number;
   readonly renamedPlaceholder: number;
   /** Contato que já existia e teve campo vazio completado. */
   readonly completedContact: number;
@@ -384,8 +406,7 @@ export async function applyContactImportPlan(
         const fields = contactPhoneFields({
           kind: entry.kind,
           digits: entry.digits,
-          reason: null,
-        });
+});
         const name = entry.name ?? fallbackContactName(entry.digits);
         return {
           cnpj: entry.cnpj,
@@ -427,13 +448,20 @@ export async function applyContactImportPlan(
 
   let renamedPlaceholder = 0;
   let completedContact = 0;
+  let filledContactWhatsapp = 0;
   for (const entry of plan.entries) {
     const isContact = entry.action === 'rename-placeholder' || entry.action === 'existing-contact';
     if (!isContact || !entry.leadId) continue;
 
     const row = await prisma.lead.findUnique({
       where: { id: entry.leadId },
-      select: { razaoSocial: true, nomeFantasia: true, situacaoCadastral: true },
+      select: {
+        razaoSocial: true,
+        nomeFantasia: true,
+        situacaoCadastral: true,
+        whatsapp: true,
+        phones: true,
+      },
     });
     if (!row) continue;
 
@@ -447,11 +475,19 @@ export async function applyContactImportPlan(
       data.nomeFantasia = row.razaoSocial;
     }
 
+    // Contato gravado como fixo antes da conversão do nono dígito: agora o
+    // número é celular e o campo de WhatsApp está vazio.
+    if (entry.kind === 'mobile' && !row.whatsapp) {
+      data.whatsapp = entry.digits;
+      if (!row.phones.includes(entry.digits)) data.phones = [...row.phones, entry.digits];
+    }
+
     if (Object.keys(data).length === 0) continue;
     await prisma.lead.update({ where: { id: entry.leadId }, data });
-    if (data.razaoSocial) renamedPlaceholder += 1;
+    if (data.whatsapp) filledContactWhatsapp += 1;
+    else if (data.razaoSocial) renamedPlaceholder += 1;
     else completedContact += 1;
   }
 
-  return { created, filledCompanyWhatsapp, renamedPlaceholder, completedContact };
+  return { created, filledCompanyWhatsapp, filledContactWhatsapp, renamedPlaceholder, completedContact };
 }

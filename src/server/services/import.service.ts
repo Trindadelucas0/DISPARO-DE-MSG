@@ -1,7 +1,6 @@
 import { ImportIssueSeverity, ImportJobStatus, Prisma } from '@prisma/client';
 
 import { CACHE_TAGS } from '@/lib/cache';
-import { looksLikeLegacyMobile } from '@/lib/contact-source';
 import { prisma } from '@/lib/db';
 import { notifyChange } from '@/lib/events';
 import {
@@ -75,8 +74,8 @@ export interface ImportPreview {
   /** Dos válidos: quantos têm celular, só fixo, e nenhum telefone. */
   readonly withWhatsapp: number;
   readonly landlineOnly: number;
-  /** Dos sem celular: quantos têm fixo em formato de celular antigo. */
-  readonly landlineLegacyShape: number;
+  /** Celulares recuperados do formato de 8 dígitos (nono dígito acrescentado). */
+  readonly legacyUpgraded: number;
   readonly withoutPhone: number;
   readonly situacaoBreakdown: readonly { situacao: string; count: number }[];
   readonly rows: readonly ImportPreviewRow[];
@@ -275,10 +274,7 @@ export async function buildPreview(
     landlineOnly: analysis.leads.filter(
       (entry) => entry.lead.whatsapp === null && entry.lead.telefone !== null,
     ).length,
-    landlineLegacyShape: analysis.leads.filter(
-      (entry) =>
-        entry.lead.whatsapp === null && entry.lead.phones.some((phone) => looksLikeLegacyMobile(phone)),
-    ).length,
+    legacyUpgraded: analysis.leads.filter((entry) => entry.lead.legacyUpgradedPhones > 0).length,
     withoutPhone: analysis.leads.filter((entry) => entry.lead.phones.length === 0).length,
     situacaoBreakdown: analysis.situacaoBreakdown,
     rows: [...previewRows, ...rejectedPreview],

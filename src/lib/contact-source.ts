@@ -5,12 +5,25 @@ import { isValidDdd, nationalPhoneDigits, parsePhone } from '@/lib/validation/ph
  * Normalização dos pacotes de telefone vindos de fora do CRM (lista de
  * empresas e listas auxiliares sem CNPJ).
  *
- * Duas regras valem para todo o pacote:
- * - só celular válido (DDD + nono dígito) é tratado como WhatsApp; fixo fica
- *   em `telefone` e não entra em público de campanha;
- * - número fora do padrão é REJEITADO e relatado, nunca "corrigido" por
- *   adivinhação (não inventamos o nono dígito nem trocamos DDD).
+ * Regras do pacote:
+ * - só celular é tratado como WhatsApp; fixo fica em `telefone` e não entra em
+ *   público de campanha;
+ * - celular no formato ANTIGO (8 dígitos) é convertido para o formato atual —
+ *   ver `MOBILE_PREFIXES` abaixo. Isso não é adivinhação: é o plano de
+ *   numeração brasileiro;
+ * - número fora do padrão continua REJEITADO e relatado, nunca remendado
+ *   (não trocamos DDD nem completamos número truncado).
  */
+
+/**
+ * Primeiro dígito do número que, antes da migração para o nono dígito,
+ * identificava CELULAR. Fixo sempre começou em 2, 3, 4 ou 5.
+ *
+ * A migração da Anatel foi exatamente isto: pôr um 9 na frente do número de
+ * oito dígitos do celular. Por isso `61 9251-1651` vira `61 99251-1651` — o
+ * número antigo não existe mais, e é o atual que está no WhatsApp.
+ */
+const MOBILE_PREFIXES = new Set(['6', '7', '8', '9']);
 
 export type SourcePhoneKind = 'mobile' | 'landline' | 'invalid';
 
@@ -20,9 +33,49 @@ export interface SourcePhone {
   readonly digits: string | null;
   /** Motivo da rejeição, só quando `kind` é `invalid`. */
   readonly reason: string | null;
+  /** O número veio com 8 dígitos e ganhou o nono dígito aqui. */
+  readonly legacyUpgraded: boolean;
 }
 
-const INVALID = (reason: string): SourcePhone => ({ kind: 'invalid', digits: null, reason });
+const INVALID = (reason: string): SourcePhone => ({
+  kind: 'invalid',
+  digits: null,
+  reason,
+  legacyUpgraded: false,
+});
+
+/**
+ * Celular de 10 dígitos (DDD + 8) no formato atual, com o nono dígito.
+ * Devolve `null` quando o número não é celular antigo.
+ */
+export function upgradeLegacyMobile(digits: string | null | undefined): string | null {
+  const value = onlyDigits(String(digits ?? ''));
+  if (value.length !== 10) return null;
+  const first = value[2];
+  if (!first || !MOBILE_PREFIXES.has(first)) return null;
+  return `${value.slice(0, 2)}9${value.slice(2)}`;
+}
+
+/** O mesmo celular no formato de 8 dígitos, como ainda aparece em base antiga. */
+export function downgradeToLegacyMobile(digits: string | null | undefined): string | null {
+  const value = onlyDigits(String(digits ?? ''));
+  if (value.length !== 11 || value[2] !== '9') return null;
+  const legacy = `${value.slice(0, 2)}${value.slice(3)}`;
+  const first = legacy[2];
+  if (!first || !MOBILE_PREFIXES.has(first)) return null;
+  return legacy;
+}
+
+/**
+ * As formas em que o MESMO celular pode estar gravado: a atual e a antiga.
+ * Usada para reencontrar um lead cadastrado antes da conversão.
+ */
+export function phoneLookupVariants(digits: string | null | undefined): string[] {
+  const value = onlyDigits(String(digits ?? ''));
+  if (value.length === 0) return [];
+  const twin = upgradeLegacyMobile(value) ?? downgradeToLegacyMobile(value);
+  return twin ? [value, twin] : [value];
+}
 
 /**
  * Classifica um telefone cru da fonte.
@@ -52,20 +105,22 @@ export function normalizeSourcePhone(raw: string | null | undefined): SourcePhon
     return INVALID('onze dígitos sem o nono dígito 9');
   }
 
-  return { kind: parsed.isMobile ? 'mobile' : 'landline', digits: parsed.digits, reason: null };
+  if (parsed.isMobile) {
+    return { kind: 'mobile', digits: parsed.digits, reason: null, legacyUpgraded: false };
+  }
+
+  // 10 dígitos: o primeiro dígito do número decide se era fixo ou celular.
+  const upgraded = upgradeLegacyMobile(parsed.digits);
+  if (upgraded) {
+    return { kind: 'mobile', digits: upgraded, reason: null, legacyUpgraded: true };
+  }
+
+  return { kind: 'landline', digits: parsed.digits, reason: null, legacyUpgraded: false };
 }
 
-/**
- * Fixo de 10 dígitos cujo número começa em 9: formato de celular brasileiro
- * ANTES da migração para o nono dígito (ex.: 61 9251-1651).
- *
- * Serve só para RELATAR o tamanho do problema. Não vira WhatsApp: acrescentar
- * o 9 seria adivinhar que o número é celular e que continua ativo, e nenhuma
- * das duas coisas está no dado.
- */
+/** Celular ainda gravado no formato de 8 dígitos. */
 export function looksLikeLegacyMobile(digits: string | null | undefined): boolean {
-  const value = onlyDigits(String(digits ?? ''));
-  return value.length === 10 && value[2] === '9';
+  return upgradeLegacyMobile(digits) !== null;
 }
 
 /** `DDD1` + `Telefone1` da lista empresarial em um número só. */
@@ -105,7 +160,7 @@ export function cleanContactName(raw: string | null | undefined): string | null 
  * Campos de contato de um lead criado a partir de um número avulso.
  * Fixo NUNCA vai para `whatsapp`: campanha lê `whatsapp`.
  */
-export function contactPhoneFields(phone: SourcePhone): {
+export function contactPhoneFields(phone: Pick<SourcePhone, 'kind' | 'digits'>): {
   readonly whatsapp: string | null;
   readonly telefone: string | null;
   readonly phones: string[];

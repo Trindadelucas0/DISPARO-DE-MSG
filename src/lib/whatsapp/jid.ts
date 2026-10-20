@@ -1,3 +1,4 @@
+import { upgradeLegacyMobile } from '@/lib/contact-source';
 import { normalizeInboundPhone } from '@/lib/whatsapp/inbound-guard';
 
 /**
@@ -11,6 +12,10 @@ export function outboundWhatsAppJidCandidates(raw: string): string[] {
   if (national.length === 11 && national[2] === '9') {
     jids.push(`55${national.slice(0, 2)}${national.slice(3)}@s.whatsapp.net`);
   }
+  // O contrário também: número de base antiga, com 8 dígitos, pode estar no
+  // WhatsApp só na forma atual, com o nono dígito.
+  const upgraded = upgradeLegacyMobile(national);
+  if (upgraded) jids.push(`55${upgraded}@s.whatsapp.net`);
   return [...new Set(jids)];
 }
 
