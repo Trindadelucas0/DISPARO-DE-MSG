@@ -19,13 +19,17 @@ npm install
 docker compose up -d     # Redis em 127.0.0.1:6380 + crm-worker
 npm run db:deploy
 npm run db:seed
-npm run dev              # http://localhost:3001
+npm run dev              # gera o Prisma Client e abre http://localhost:3001
 ```
 
 Postgres neste ambiente é o serviço nativo (porta 5432), não o container. A porta 3000 fica
 livre para outros sistemas. `AUTH_URL` local: `http://localhost:3001`.
 
 Não rode `npm run worker` no terminal junto com o container `crm-worker` (lock Redis).
+
+`npm run dev` e `npm run build` executam `npm run db:generate` automaticamente antes do Next.
+Se aparecer `@prisma/client did not initialize yet`, feche o processo Next e rode
+`npm run db:generate`; depois inicie novamente.
 
 Publicar no GitHub (depois de editar aqui):
 

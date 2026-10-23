@@ -954,6 +954,10 @@ npm run dev            # desenvolvimento, http://localhost:3001
 # Não rode npm run worker no terminal: o container já é o worker.
 ```
 
+Ao executar `npm run dev`, o sistema gera o Prisma Client automaticamente antes de abrir.
+Se a geração não terminar, o Next não inicia; o TI deve corrigir o erro mostrado no terminal e
+tentar de novo. Para repetir somente essa etapa, use `npm run db:generate` com o Next fechado.
+
 Versão compilada:
 
 ```powershell

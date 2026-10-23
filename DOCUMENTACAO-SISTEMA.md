@@ -19,9 +19,9 @@ continua sendo a fonte de regra, campo e path de código. Tutorial para o client
 [`docs/como-usar-o-sistema.md`](docs/como-usar-o-sistema.md)
 (guia visual: wireframe ASCII por tela e passos “clique aqui”; linguagem do dia a dia).
 
-- Versão: 0.16.19 — Excluir conversa na Inbox
+- Versão: 0.16.20 — Inicialização segura do Prisma
 - Fases entregues: 1 a 9 (MVP) + restyle 0.11.0 + identidade 0.12.0 + atendimento 0.13.0 + retorno 0.14.0
-- Última atualização: 29/09/2026 — Excluir conversa na Inbox (`DELETE /api/conversations/:id`). Antes, 0.16.18 — Uma fonte: CRM = disparo. Deploy VPS (`deploy/`, `docker-compose.vps.yml`) vive em `CRM/`. GitHub `DISPARO-DE-MSG` recebe o mesmo código via `npm run publish:github`. `npm start` escuta `127.0.0.1:3001`.
+- Última atualização: 22/10/2026 — `npm run dev` e `npm run build` geram o Prisma Client antes de iniciar, inclusive quando o npm bloqueia scripts automáticos das dependências. Antes, 0.16.19 — Excluir conversa na Inbox (`DELETE /api/conversations/:id`).
 
 ---
 
@@ -122,6 +122,12 @@ O worker Baileys **não** precisa de segundo terminal. `docker compose up -d` so
 irmão `crm-postgres` quando `CRM_DOCKER_DB_HOST=crm-postgres` (`src/lib/worker-docker-env.ts`).
 Sessão e mídia ficam nos volumes `data/whatsapp-auth/` e `data/media/`. Fallback de debug:
 `npm run worker` na pasta CRM — **nunca** junto com o container (lock Redis).
+
+Antes de `dev` e `build`, os scripts `predev` e `prebuild` executam `npm run db:generate`.
+Isso garante que `@prisma/client` corresponda ao schema mesmo quando o npm não executou o
+`postinstall` da dependência. Se a geração falhar, o Next não inicia com um cliente-placeholder;
+o terminal mostra a causa antes de abrir a aplicação. Para diagnosticar separadamente, use
+`npm run db:generate`.
 
 ### Degradação sem Redis
 
@@ -835,6 +841,9 @@ Religar / atualizar: runbook em [`README.md`](README.md) (`git pull`, `migrate d
 
 HTTPS (Let's Encrypt) **não** está neste ambiente. Senha root e `.env` não entram neste arquivo.
 
+Resultado na entrega 0.16.20 — **Inicialização segura do Prisma**: `npm run dev` e
+`npm run build` executam `npm run db:generate` antes do Next. Instalações em que o npm bloqueou
+o `postinstall` de `@prisma/client` deixam de abrir a página com erro 500 por cliente-placeholder.
 Resultado na entrega 0.16.19 — **Excluir conversa na Inbox**: botão **Excluir** no cabeçalho
 da conversa, confirmação com o nome, `DELETE /api/conversations/:id` (quem escreve na conversa).
 Apaga conversa e mensagens no CRM; lead e WhatsApp do contato permanecem.
