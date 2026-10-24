@@ -9,6 +9,10 @@ import { idbGet, idbSet, IDB_KEYS } from '@/lib/idb';
 import type { SerializedTemplate } from '@/server/services/template.service';
 import type { SerializedMedia } from '@/server/services/media.service';
 import type { LeadWhatsappSendResponse } from '@/features/messages/whatsapp-send';
+import {
+  prepareTemplateSaveRequest,
+  type TemplateSaveInput,
+} from '@/features/messages/template-request';
 
 export function useTemplates(activeOnly = false) {
   return useQuery({
@@ -38,19 +42,12 @@ export function usePrefetchTemplatesFromIdb() {
 export function useSaveTemplate() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: {
-      id?: string;
-      name: string;
-      channel: string;
-      subject?: string | null;
-      body: string;
-      active?: boolean;
-      mediaId?: string | null;
-    }) => {
-      if (input.id) {
-        return apiPatch<SerializedTemplate>(`/api/templates/${input.id}`, input);
+    mutationFn: (input: TemplateSaveInput) => {
+      const request = prepareTemplateSaveRequest(input);
+      if (request.id) {
+        return apiPatch<SerializedTemplate>(`/api/templates/${request.id}`, request.body);
       }
-      return apiPost<SerializedTemplate>('/api/templates', input);
+      return apiPost<SerializedTemplate>('/api/templates', request.body);
     },
     onSuccess: () => {
       invalidateClientTags(queryClient, ['templates']);

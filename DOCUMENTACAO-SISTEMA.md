@@ -19,9 +19,9 @@ continua sendo a fonte de regra, campo e path de código. Tutorial para o client
 [`docs/como-usar-o-sistema.md`](docs/como-usar-o-sistema.md)
 (guia visual: wireframe ASCII por tela e passos “clique aqui”; linguagem do dia a dia).
 
-- Versão: 0.16.20 — Inicialização segura do Prisma
+- Versão: 0.16.21 — Edição de templates corrigida
 - Fases entregues: 1 a 9 (MVP) + restyle 0.11.0 + identidade 0.12.0 + atendimento 0.13.0 + retorno 0.14.0
-- Última atualização: 22/10/2026 — `npm run dev` e `npm run build` geram o Prisma Client antes de iniciar, inclusive quando o npm bloqueia scripts automáticos das dependências. Antes, 0.16.19 — Excluir conversa na Inbox (`DELETE /api/conversations/:id`).
+- Última atualização: 24/10/2026 — editar um template não envia mais o `id` da rota dentro do JSON; o `PATCH /api/templates/:id` volta a aceitar alterações de texto, canal, assunto e mídia. Antes, 0.16.20 — inicialização segura do Prisma.
 
 ---
 
@@ -474,6 +474,8 @@ Código: `src/features/follow-ups/follow-ups-screen.tsx`, `src/app/api/follow-up
 CRUD de template (ADMIN/MANAGER). USER só lê e usa no envio. Variáveis `{{razaoSocial}}` etc. em
 `src/lib/template.ts`, inclusive `{{vendedor}}` (nome da sessão). Preview no editor com valores de
 exemplo. Excluir pede confirmação com o **nome** do template. Os três textos do seed continuam rascunho operacional.
+Na edição, o `id` fica somente no caminho `PATCH /api/templates/:id`; o corpo JSON contém apenas os
+campos aceitos por `templatePatchSchema`.
 Anexo opcional: **uma foto ou um vídeo** (`POST /api/media`, depois `mediaId` no CRUD). O texto vira
 legenda. Áudio não entra no template. Limites: foto 5 MB (JPEG/PNG/WebP), vídeo 16 MB (MP4).
 Arquivo em `data/media/<uuid>.ext`. Leitura autenticada em `GET /api/media/:id`.
@@ -841,6 +843,9 @@ Religar / atualizar: runbook em [`README.md`](README.md) (`git pull`, `migrate d
 
 HTTPS (Let's Encrypt) **não** está neste ambiente. Senha root e `.env` não entram neste arquivo.
 
+Resultado na entrega 0.16.21 — **Edição de templates corrigida**: o cliente separa o `id` usado na
+URL antes de montar o JSON do `PATCH`; a validação estrita da API deixa de rejeitar toda edição como
+“Dados inválidos na requisição”. Teste cobre payload com texto e mídia.
 Resultado na entrega 0.16.20 — **Inicialização segura do Prisma**: `npm run dev` e
 `npm run build` executam `npm run db:generate` antes do Next. Instalações em que o npm bloqueou
 o `postinstall` de `@prisma/client` deixam de abrir a página com erro 500 por cliente-placeholder.

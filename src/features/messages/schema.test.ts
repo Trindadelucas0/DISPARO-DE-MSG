@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { templateWriteSchema, whatsappSendSchema } from '@/features/messages/schema';
+import {
+  templatePatchSchema,
+  templateWriteSchema,
+  whatsappSendSchema,
+} from '@/features/messages/schema';
+import { prepareTemplateSaveRequest } from '@/features/messages/template-request';
 
 describe('template + envio com mídia', () => {
   it('aceita template só com foto', () => {
@@ -29,5 +34,20 @@ describe('template + envio com mídia', () => {
 
   it('recusa envio sem texto e sem template', () => {
     expect(whatsappSendSchema.safeParse({ content: '' }).success).toBe(false);
+  });
+
+  it('não envia o id da rota no corpo ao editar um template', () => {
+    const request = prepareTemplateSaveRequest({
+      id: 'tpl1',
+      name: 'Pesquisa — cuidados com cães',
+      channel: 'WHATSAPP',
+      subject: null,
+      body: 'Texto atualizado',
+      mediaId: 'media1',
+    });
+
+    expect(request.id).toBe('tpl1');
+    expect(request.body).not.toHaveProperty('id');
+    expect(templatePatchSchema.safeParse(request.body).success).toBe(true);
   });
 });
