@@ -299,7 +299,7 @@ Textos prontos (depois que o Administrador rodou a carga inicial): tags **HOT**,
 
 **Quem usa:** Administrador e Gestor. O Vendedor **não** vê este menu.
 
-**O que é:** disparo em lote pelo WhatsApp já conectado. Sai no ritmo de **5 envios por minuto**.
+**O que é:** disparo em lote pelo WhatsApp já conectado. Sai no ritmo de **2 envios por minuto**.
 
 Se **Iniciar campanha** recusar, peça para o responsável de TI **deixar o sistema ligado** (detalhe só no apêndice).
 
@@ -999,7 +999,7 @@ Cloudflare Zero Trust, não neste repositório. O CRM escuta `127.0.0.1:3001`.
 senha definida em `SEED_ADMIN_PASSWORD`. Rodar o seed de novo **não** sobrescreve
 uma senha já trocada.
 
-Campanha: teto **5 envios/minuto** no worker. Retorno automático depois de **Esperar (horas)** (padrão 2 h) via job na fila; **Disparar retorno agora** é catch-up de quem já passou o intervalo. Inbox e Enviar no lead ficam fora do teto.
+Campanha: teto **2 envios/minuto** no worker. Retorno automático depois de **Esperar (horas)** (padrão 2 h) via job na fila; **Disparar retorno agora** é catch-up de quem já passou o intervalo. Inbox e Enviar no lead ficam fora do teto.
 
 ### Importar pelo terminal
 

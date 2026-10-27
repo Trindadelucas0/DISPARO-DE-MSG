@@ -65,7 +65,7 @@ Regras que, se ignoradas, o sistema “sobe” mas não dispara:
 4. **Nunca** versionar nem copiar de outra máquina: `.env`, `node_modules/`, `.next/`, `data/whatsapp-auth/`, `data/media/`.
 5. `AUTH_URL` tem que ser a URL **pública HTTPS** (a que o usuário abre).
 6. Senha do Postgres no `.env`: `POSTGRES_PASSWORD` e a senha dentro de `DATABASE_URL` **iguais**. Evite `@ : / # %` na senha.
-7. Cadência de campanha: **5 disparos por minuto** (1 a cada 12 s). Duas campanhas ao mesmo tempo **dividem** esse teto.
+7. Cadência de campanha: **2 disparos por minuto** (1 a cada 30 s). Duas campanhas ao mesmo tempo **dividem** esse teto.
 8. Na VPS use **`docker-compose.vps.yml`**. `docker-compose.yml` é Windows (Redis 6380). `docker-compose.postgres.yml` usa outro nome de volume e **apaga o banco** se você trocar.
 
 Caminho típico na VPS: `/opt/disparo-de-msg`. Os templates em `deploy/` usam esse path.
@@ -237,7 +237,7 @@ sudo certbot --nginx -d SEU_DOMINIO
 4. **WhatsApp**: Adicionar conta → **WhatsApp Web (QR)** → **Conectar** → escanear.
 5. Status **Conectada**. Sem isso, campanha não inicia e o lead cai em `wa.me`.
 6. **Mensagens**: revise os templates.
-7. **Campanhas**: público + template + conta CONNECTED → **Iniciar**. Ritmo: 5/min.
+7. **Campanhas**: público + template + conta CONNECTED → **Iniciar**. Ritmo: 2/min.
 8. Respostas aparecem em **Inbox**.
 
 Código **515** logo após escanear o QR é **esperado**. Não apague `data/whatsapp-auth/` nesse momento.

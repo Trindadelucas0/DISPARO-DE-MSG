@@ -82,7 +82,7 @@ export const SENT_RECIPIENT_STATUSES: readonly CampaignRecipientStatus[] = [
 ];
 
 /** Teto da fila de campanha. Inbox e envio avulso no lead não entram. */
-export const CAMPAIGN_SENDS_PER_MINUTE = 5;
+export const CAMPAIGN_SENDS_PER_MINUTE = 2;
 
 export const CAMPAIGN_FOLLOW_UP_DELAY_HOURS_DEFAULT = 2;
 export const CAMPAIGN_FOLLOW_UP_DELAY_HOURS_MIN = 1;

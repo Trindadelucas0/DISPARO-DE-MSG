@@ -19,9 +19,9 @@ continua sendo a fonte de regra, campo e path de código. Tutorial para o client
 [`docs/como-usar-o-sistema.md`](docs/como-usar-o-sistema.md)
 (guia visual: wireframe ASCII por tela e passos “clique aqui”; linguagem do dia a dia).
 
-- Versão: 0.16.21 — Edição de templates corrigida
+- Versão: 0.16.22 — Cadência de disparo em 2 por minuto
 - Fases entregues: 1 a 9 (MVP) + restyle 0.11.0 + identidade 0.12.0 + atendimento 0.13.0 + retorno 0.14.0
-- Última atualização: 24/10/2026 — editar um template não envia mais o `id` da rota dentro do JSON; o `PATCH /api/templates/:id` volta a aceitar alterações de texto, canal, assunto e mídia. Antes, 0.16.20 — inicialização segura do Prisma.
+- Última atualização: 27/10/2026 — cadência de campanha reduzida para 2 disparos por minuto (1 a cada 30 s). Antes, 0.16.21 — edição de templates corrigida.
 
 ---
 
@@ -142,11 +142,11 @@ Filas: `campaign-send`, `campaign-retry`, `whatsapp-inbound`, `whatsapp-status`,
 pode ter `:` (BullMQ recusa). A chave do destinatário é `campaignId-leadId`; `toBullJobId`
 troca `:` restante por `-` (chaves antigas `campaignId:leadId` entram na mesma fila).
 
-Cadência de campanha: **5 disparos por minuto** (`CAMPAIGN_SENDS_PER_MINUTE`), espaçados em
-12 s (`campaignSendIntervalMs`). O teto está no worker (`concurrency: 1` + BullMQ `limiter`
-`max: 1` / 12 s) em `campaign-send` e, por defesa, em `campaign-retry`. Duas campanhas ao
-mesmo tempo **dividem** os 5/min. O **retorno** (segunda mensagem) entra na **mesma** fila —
-não soma 5+5. JobId do retorno: `followup-{campaignId}-{leadId}` (retry de falha ou pausa
+Cadência de campanha: **2 disparos por minuto** (`CAMPAIGN_SENDS_PER_MINUTE`), espaçados em
+30 s (`campaignSendIntervalMs`). O teto está no worker (`concurrency: 1` + BullMQ `limiter`
+`max: 1` / 30 s) em `campaign-send` e, por defesa, em `campaign-retry`. Duas campanhas ao
+mesmo tempo **dividem** os 2/min. O **retorno** (segunda mensagem) entra na **mesma** fila —
+não soma 2+2. JobId do retorno: `followup-{campaignId}-{leadId}` (retry de falha ou pausa
 acrescenta `-r{timestamp}`). Depois do primeiro `SENT`, o worker agenda o retorno com
 `delay` BullMQ = `followUpDelayHours` (padrão 2 h). Sem cron. Pausada: o job delayed que
 disparar é ignorado; **Retomar** reagenda com o tempo que ainda falta. Inbox e envio
@@ -510,7 +510,7 @@ QR **não** abre nesta tela: conectar em `/whatsapp`. Iniciar recusa conta desco
 | Público | Incluir na campanha | Cadastro manual no rascunho | Não | `POST /api/leads` | Grava o contato e coloca o id em `audienceFilter.ids` | `manual-contact-form.tsx` |
 | Quantidade | Enviar para no máximo | Primeiros N elegíveis do rascunho | Não (vazio = todos) | `Campaign.recipientLimit` | Inteiro 1–100000; ordem por `id`. Só o primeiro lote. UI estima `ceil(N/5)` min | `takeRecipientLimit`, `estimateCampaignMinutes` |
 | Próximo lote | Adicionar mais | Novos destinatários na mesma campanha | Não | `POST /api/campaigns/:id/recipients` | Recusa rascunho e cancelada. Exclui `leadId` já materializado (`nextRecipientBatch`). Pausada: cria `PENDING` e espera Retomar. Concluída volta a `RUNNING` | `addCampaignRecipients` |
-| Quantidade | Ritmo | 5 disparos/min | — | constante | Worker, não a API. Inbox fora | `CAMPAIGN_SENDS_PER_MINUTE`, `workers/campaign-worker.ts` |
+| Quantidade | Ritmo | 2 disparos/min | — | constante | Worker, não a API. Inbox fora | `CAMPAIGN_SENDS_PER_MINUTE`, `workers/campaign-worker.ts` |
 | Mensagem | Template | Texto da campanha | Sim para iniciar (ou mídia) | `GET /api/templates` | Se o template tem foto/vídeo, o disparo manda essa mídia + legenda (uma mensagem por destinatário) | `campaign.service.ts`, `campaign-send.ts` |
 | Retorno | Template de retorno | Segunda mensagem, outro template | Sim na UI para iniciar | `GET /api/templates` | Distinto do primeiro. Só quem `SENT`/`DELIVERED`, não respondeu, passou `followUpDelayHours` (1–72, padrão 2). Agenda sozinho no `SENT` | `scheduleAutomaticFollowUp`, `campaign-send.ts` |
 | Retorno | Esperar (horas) | Espera após a primeira mensagem | Sim (default 2) | `Campaign.followUpDelayHours` | Delayed job BullMQ. **Disparar retorno agora** é catch-up. Pausada: Retomar reagenda | `campaign-detail-screen.tsx` |
@@ -530,7 +530,7 @@ QR **não** abre nesta tela: conectar em `/whatsapp`. Iniciar recusa conta desco
 | Destinatários | `GET/POST .../recipients` | tabela densa server-side; `GET` aceita `status`; `POST` adiciona lote |
 
 UI: `src/features/campaigns/*`. Worker: `src/server/queue/processors/campaign-send.ts` +
-`workers/campaign-worker.ts` (teto 5/min). Em envio, a tela mostra ritmo e minutos restantes
+`workers/campaign-worker.ts` (teto 2/min). Em envio, a tela mostra ritmo e minutos restantes
 a partir de `metrics.pending`. `wizardStep` permanece no banco por compatibilidade; a UI não
 navega por passos.
 
@@ -693,7 +693,7 @@ Comportamento do job:
 | Rate limit de importação | 5 / 10 min por usuário + IP | `RATE_LIMITS.import` |
 | Rate limit de exportação | 10 / 10 min por usuário + IP | `RATE_LIMITS.export` |
 | Rate limit de início de campanha | 8 / 10 min por usuário | `RATE_LIMITS.campaignStart` (também `POST .../follow-up` e `POST .../recipients`) |
-| Cadência de disparo de campanha | 5 / min (1 a cada 12 s), fila inteira | `CAMPAIGN_SENDS_PER_MINUTE`, `workers/campaign-worker.ts` |
+| Cadência de disparo de campanha | 2 / min (1 a cada 30 s), fila inteira | `CAMPAIGN_SENDS_PER_MINUTE`, `workers/campaign-worker.ts` |
 | Rate limit de webhook | 120 / min por IP | `RATE_LIMITS.webhook` |
 | Rate limit de escrita comum | 60 / min por usuário | `RATE_LIMITS.writeHeavy` (`POST /api/leads`, `POST /api/leads/bulk`, `POST /api/conversations/:id/contact`) |
 | Rate limit de upload de mídia | 20 / 10 min por usuário + IP | `RATE_LIMITS.mediaUpload` (`POST /api/media`) |
@@ -843,6 +843,12 @@ Religar / atualizar: runbook em [`README.md`](README.md) (`git pull`, `migrate d
 
 HTTPS (Let's Encrypt) **não** está neste ambiente. Senha root e `.env` não entram neste arquivo.
 
+Resultado na entrega 0.16.22 — **Cadência de 2 por minuto**: `CAMPAIGN_SENDS_PER_MINUTE` passa de
+5 para 2 (1 a cada 30 s no limiter do `campaign-send`), depois de o WhatsApp restringir por 5 h a
+conta nova que disparava 5/min (erro 463 nos logs do worker e sessão caindo com `conflict` ~20 s
+depois de cada reconexão). A tela, a estimativa de minutos restantes e o aviso do retorno leem a
+mesma constante. Religar o worker (`docker compose -f docker-compose.vps.yml up -d --build worker`)
+é obrigatório: o limiter é lido na subida.
 Resultado na entrega 0.16.21 — **Edição de templates corrigida**: o cliente separa o `id` usado na
 URL antes de montar o JSON do `PATCH`; a validação estrita da API deixa de rejeitar toda edição como
 “Dados inválidos na requisição”. Teste cobre payload com texto e mídia.
