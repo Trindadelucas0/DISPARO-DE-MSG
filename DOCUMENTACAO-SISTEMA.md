@@ -19,9 +19,9 @@ continua sendo a fonte de regra, campo e path de código. Tutorial para o client
 [`docs/como-usar-o-sistema.md`](docs/como-usar-o-sistema.md)
 (guia visual: wireframe ASCII por tela e passos “clique aqui”; linguagem do dia a dia).
 
-- Versão: 0.16.24 — Agenda em .vcf para transmissão manual
+- Versão: 0.16.25 — Agenda em .vcf para transmissão manual
 - Fases entregues: 1 a 9 (MVP) + restyle 0.11.0 + identidade 0.12.0 + atendimento 0.13.0 + retorno 0.14.0
-- Última atualização: 28/10/2026 — exportação da agenda em .vcf, em grupos rotulados para lista de transmissão. Antes, 0.16.23 — pausar e cancelar limpam a fila.
+- Última atualização: 28/10/2026 — exportação da agenda em .vcf, em grupos rotulados mais um todos.vcf de importação única. Antes, 0.16.24 — primeira versão da exportação; 0.16.23 — pausar e cancelar limpam a fila.
 
 ---
 
@@ -697,9 +697,10 @@ Comportamento do job:
 ### 7.1 Exportar a agenda em .vcf (transmissão manual)
 
 `npm run contatos:vcf` (script `scripts/exportar-contatos-vcf.ts`, regras puras em
-`src/lib/contacts/vcard.ts`). Gera um `.vcf` por grupo na pasta `data/contatos-vcf/` mais um
-`indice.csv`. Opções: `--tamanho=50` (contatos por grupo), `--campanha=<id>` (só o público
-daquela campanha) e `--saida=<pasta>`.
+`src/lib/contacts/vcard.ts`). Gera um `.vcf` por grupo na pasta `data/contatos-vcf/`, um
+`todos.vcf` com a agenda inteira na mesma ordem e um `indice.csv`. Opções: `--tamanho=50`
+(contatos por grupo), `--campanha=<id>` (só o público daquela campanha) e `--saida=<pasta>`. A
+pasta está no `.gitignore` — são telefones de lead, não entram no repositório.
 
 O nome de cada contato começa com o rótulo do grupo — `A01 Empresa`, `A02 Empresa` — porque a
 agenda do celular ordena por nome e o grupo inteiro fica junto na hora de marcar a lista de
@@ -708,7 +709,8 @@ transmissão. Rótulos: `A`…`Z` e, quando o alfabeto acaba, `A1`…`Z1`, `A2`�
 que iPhone e Android importam sem conversão.
 
 O arquivo sai **no servidor**: mandar para o celular (e-mail, Drive, cabo) e confirmar "importar
-todos" lá. Não há como gravar na agenda do aparelho a partir daqui.
+todos" lá. Não há como gravar na agenda do aparelho a partir daqui. Uma importação do `todos.vcf`
+resolve a agenda inteira; os arquivos por grupo servem para importar em lotes.
 
 **Limite do WhatsApp:** a lista de transmissão entrega **só para quem tem o seu número salvo na
 agenda**. Para lead frio — que nunca falou com o número — a transmissão não chega. O `.vcf` serve
@@ -876,6 +878,10 @@ Religar / atualizar: runbook em [`README.md`](README.md) (`git pull`, `migrate d
 
 HTTPS (Let's Encrypt) **não** está neste ambiente. Senha root e `.env` não entram neste arquivo.
 
+Resultado na entrega 0.16.25 — **Importação única da agenda**: a exportação passou a gravar também
+um `todos.vcf` com a agenda inteira na mesma ordem dos grupos, porque importar 39 arquivos um a um
+no celular é inviável. Os rótulos no nome continuam separando os grupos depois da importação. A
+pasta `data/contatos-vcf/` entrou no `.gitignore` — são telefones de lead.
 Resultado na entrega 0.16.24 — **Agenda em .vcf**: `npm run contatos:vcf` exporta os leads com
 celular em grupos de tamanho definido (`--tamanho`, padrão 50), um `.vcf` por grupo mais
 `indice.csv`. O nome do contato começa com o rótulo (`A01`, `A02`, … `A1`…`Z1`) para a agenda do

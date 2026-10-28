@@ -93,3 +93,9 @@ node_modules/
 __pycache__/
 *.pyc
 .npm/
+
+# agenda exportada (telefones de lead) — nunca versionar
+data/contatos-vcf/
+
+# planilhas de origem de telefone (dado de lead) — nunca versionar
+data/fontes-telefones/

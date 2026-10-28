@@ -1022,14 +1022,15 @@ npm run contatos:vcf -- --tamanho=256    # outro tamanho de grupo
 npm run contatos:vcf -- --campanha=<id>  # só o público daquela campanha
 ```
 
-Sai uma pasta `data/contatos-vcf` com um arquivo por grupo — `A.vcf`, `B.vcf`, … `A1.vcf` — e um
-`indice.csv` dizendo quem caiu em qual grupo. Cada contato entra na agenda já com o rótulo no
-começo do nome (`A01 Empresa`, `A02 Empresa`), então o celular mostra o grupo inteiro junto e você
-marca de uma vez.
+Sai uma pasta `data/contatos-vcf` com um arquivo por grupo — `A.vcf`, `B.vcf`, … `A1.vcf` — um
+`todos.vcf` com a agenda inteira e um `indice.csv` dizendo quem caiu em qual grupo. Cada contato
+entra na agenda já com o rótulo no começo do nome (`A01 Empresa`, `A02 Empresa`), então o celular
+mostra o grupo inteiro junto e você marca de uma vez.
 
 No celular: mande o arquivo para você mesmo (e-mail, Drive ou cabo), abra e confirme **importar
-todos**. Só depois disso os contatos aparecem no WhatsApp. Não dá para gravar na agenda do
-aparelho direto do servidor.
+todos**. O `todos.vcf` resolve tudo em uma importação; os arquivos por grupo servem se você
+preferir ir em lotes. Só depois disso os contatos aparecem no WhatsApp. Não dá para gravar na
+agenda do aparelho direto do servidor.
 
 **Antes de contar com isso:** a lista de transmissão do WhatsApp entrega **só para quem tem o seu
 número salvo na agenda**. Quem nunca falou com você não recebe — a mensagem sai, aparece como

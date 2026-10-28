@@ -6,6 +6,9 @@
  * ordena por nome e o grupo inteiro fica junto na hora de marcar a lista de
  * transmissão. O `indice.csv` diz quem caiu em qual grupo.
  *
+ * Sai também um `todos.vcf` com a agenda inteira na mesma ordem: uma importação
+ * só resolve o celular, e os rótulos continuam separando os grupos.
+ *
  * Uso:
  *   npm run contatos:vcf                                 # todos os leads com celular
  *   npm run contatos:vcf -- --tamanho=256                # outro tamanho de grupo
@@ -96,6 +99,7 @@ function escreverGrupos(leads: readonly LeadAgenda[], opcoes: Opcoes): number {
 
   const grupos = splitIntoGroups(leads, opcoes.tamanho);
   const indice: string[] = ['grupo,posicao,nome_na_agenda,telefone,razao_social'];
+  const todos: VCardContact[] = [];
 
   grupos.forEach((grupo, i) => {
     const label = groupLabel(i);
@@ -109,9 +113,13 @@ function escreverGrupos(leads: readonly LeadAgenda[], opcoes: Opcoes): number {
       return { displayName, phone: toE164(lead.telefone), organization: lead.razaoSocial };
     });
 
+    todos.push(...contatos);
     writeFileSync(join(destino, `${label}.vcf`), buildVCardFile(contatos), 'utf8');
     console.log(`  ${label}.vcf — ${contatos.length} contato(s)`);
   });
+
+  writeFileSync(join(destino, 'todos.vcf'), buildVCardFile(todos), 'utf8');
+  console.log(`  todos.vcf — ${todos.length} contato(s), a agenda inteira de uma vez`);
 
   writeFileSync(join(destino, 'indice.csv'), `${indice.join('\n')}\n`, 'utf8');
   console.log(`\nPasta: ${destino}`);
