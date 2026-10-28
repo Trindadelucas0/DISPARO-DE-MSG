@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { followUpIdempotencyKey, recipientIdempotencyKey } from '@/server/queue/campaign-helpers';
-import { isBullDuplicateJobError, toBullJobId } from '@/server/queue/job-id';
+import { isBullDuplicateJobError, isCampaignJobId, toBullJobId } from '@/server/queue/job-id';
 
 describe('toBullJobId', () => {
   it('remove dois-pontos que o BullMQ recusa', () => {
@@ -25,5 +25,27 @@ describe('toBullJobId', () => {
   it('reconhece job duplicado do BullMQ', () => {
     expect(isBullDuplicateJobError(new Error('Job c-l already exists'))).toBe(true);
     expect(isBullDuplicateJobError(new Error('Custom Id cannot contain :'))).toBe(false);
+  });
+});
+
+describe('isCampaignJobId', () => {
+  const campanha = 'cmvs1m42s02fpkykvty7bqa2c';
+  const lead = 'cmtsshc4902kxkyiej73czzrg';
+
+  it('pega primeira onda, retorno e retry da campanha', () => {
+    expect(isCampaignJobId(`${campanha}-${lead}`, campanha)).toBe(true);
+    expect(isCampaignJobId(`followup-${campanha}-${lead}`, campanha)).toBe(true);
+    expect(isCampaignJobId(`retry-${campanha}-${lead}`, campanha)).toBe(true);
+    expect(isCampaignJobId(`retry-followup-${campanha}-${lead}-r9`, campanha)).toBe(true);
+  });
+
+  it('pega chave reenfileirada à mão (sufixo -r1)', () => {
+    expect(isCampaignJobId(`${campanha}-${lead}-r1`, campanha)).toBe(true);
+  });
+
+  it('não pega job de outra campanha nem de outra fila', () => {
+    expect(isCampaignJobId(`cmvs1diya0001kykv31j1yry9-${lead}`, campanha)).toBe(false);
+    expect(isCampaignJobId(`route-${lead}-123`, campanha)).toBe(false);
+    expect(isCampaignJobId(campanha, campanha)).toBe(false);
   });
 });

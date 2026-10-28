@@ -280,6 +280,7 @@ Volume Docker do Postgres: `crm_pg_data`.
 | Sintoma | Causa usual | O que fazer |
 | --- | --- | --- |
 | Campanha não inicia; API fala de Redis/fila | Redis down ou `REDIS_URL` errada | Compose VPS; `.env` com `127.0.0.1:6379` |
+| Campanha **Em envio** e nada sai | fila com jobs de campanha pausada/cancelada na frente (antes de 0.16.23) | pausar/cancelar já limpa a fila; confira `llen bull:campaign-send:wait` |
 | QR não aparece / conecta e cai | `crm-worker` parado, ou `npm run worker` no host junto | logs do worker; mate o worker extra |
 | Redis 6380 na VPS | subiu `docker-compose.yml` (Windows) | use `-f docker-compose.vps.yml` ou `COMPOSE_FILE` |
 | Login loop / CSRF atrás do Nginx | `AUTH_URL` HTTP ou domínio errado | HTTPS público no `.env`; restart do Next |

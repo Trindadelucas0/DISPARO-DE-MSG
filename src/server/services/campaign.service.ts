@@ -13,7 +13,11 @@ import { isRedisAvailable } from '@/lib/redis';
 import { prisma } from '@/lib/db';
 import { toWhatsappNumber } from '@/lib/validation/phone';
 import { BadRequestError, NotFoundError } from '@/server/api-handler';
-import { assertQueueAvailable, enqueueCampaignSend } from '@/server/queue/enqueue';
+import {
+  assertQueueAvailable,
+  enqueueCampaignSend,
+  removeCampaignJobs,
+} from '@/server/queue/enqueue';
 import { buildLeadWhere } from '@/server/repositories/lead.repository';
 import {
   countCampaignFunnelMetrics,
@@ -822,12 +826,27 @@ export async function addCampaignRecipients(
   return getCampaign(user, id);
 }
 
+/**
+ * Parar a campanha no banco não basta: o job pendente continua no Redis e o
+ * worker vai puxá-lo mesmo assim, gastando um slot do ritmo para não enviar
+ * nada. Falha aqui não derruba o pause/cancel — o estado no banco é o que manda.
+ */
+async function clearCampaignQueue(id: string, acao: 'pausar' | 'cancelar'): Promise<void> {
+  try {
+    const removed = await removeCampaignJobs(id);
+    if (removed > 0) console.log(`[campanha] ${acao}: ${removed} job(s) fora da fila`, id);
+  } catch (error) {
+    console.error(`[campanha] ${acao}: limpar fila falhou`, id, (error as Error).message);
+  }
+}
+
 export async function pauseCampaign(user: SessionUser, id: string) {
   assertManager(user);
   const campaign = await findCampaign(id);
   if (!campaign) throw new NotFoundError('Campanha não encontrada.');
   if (campaign.status !== 'RUNNING') throw new BadRequestError('Só campanha em envio pode pausar.');
   await updateCampaign(id, { status: 'PAUSED', pausedAt: new Date() });
+  await clearCampaignQueue(id, 'pausar');
   await recordAudit({ userId: user.id, action: 'campaign.pause', entity: 'Campaign', entityId: id });
   await notifyChange({ type: 'campaign.pause', tags: MUTATION_TAGS.campaign, entityId: id });
   return getCampaign(user, id);
@@ -845,6 +864,7 @@ export async function cancelCampaign(user: SessionUser, id: string) {
     throw new BadRequestError('Campanha já encerrada.');
   }
   await updateCampaign(id, { status: 'CANCELLED', cancelledAt: new Date() });
+  await clearCampaignQueue(id, 'cancelar');
   await prisma.campaignRecipient.updateMany({
     where: { campaignId: id, status: { in: ['PENDING', 'QUEUED'] } },
     data: { status: 'SKIPPED', error: 'Campanha cancelada.', processedAt: new Date() },

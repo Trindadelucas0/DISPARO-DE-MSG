@@ -19,9 +19,9 @@ continua sendo a fonte de regra, campo e path de código. Tutorial para o client
 [`docs/como-usar-o-sistema.md`](docs/como-usar-o-sistema.md)
 (guia visual: wireframe ASCII por tela e passos “clique aqui”; linguagem do dia a dia).
 
-- Versão: 0.16.22 — Cadência de disparo em 2 por minuto
+- Versão: 0.16.23 — Pausar e cancelar limpam a fila
 - Fases entregues: 1 a 9 (MVP) + restyle 0.11.0 + identidade 0.12.0 + atendimento 0.13.0 + retorno 0.14.0
-- Última atualização: 27/10/2026 — cadência de campanha reduzida para 2 disparos por minuto (1 a cada 30 s). Antes, 0.16.21 — edição de templates corrigida.
+- Última atualização: 28/10/2026 — pausar ou cancelar campanha tira os jobs pendentes da fila; reenfileirar não é mais engolido como duplicado. Antes, 0.16.22 — cadência de 2 por minuto.
 
 ---
 
@@ -153,7 +153,20 @@ disparar é ignorado; **Retomar** reagenda com o tempo que ainda falta. Inbox e 
 avulso no lead **não** entram nesse teto.
 `enqueueCampaignRetry` existe e não é chamado; se um dia for, o job deve voltar para
 `campaign-send` (não somar 5+5). Worker antigo sem restart continua no ritmo anterior:
-religar o container `crm-worker` (`docker compose restart worker`).
+religar o container `crm-worker` (`docker compose restart worker`). O container monta `./src`
+e `./workers` como volume: mudança nesses diretórios **não** precisa de rebuild, só restart.
+
+**Pausar e cancelar tiram os jobs da fila** (`removeCampaignJobs`, estados `wait`, `delayed` e
+`paused` das filas `campaign-send` e `campaign-retry`; `active` fica de fora porque já está no
+worker). Sem isso o job continua no Redis depois do pause: o worker puxa, vê a campanha parada,
+descarta — e **gasta um slot do ritmo mesmo sem enviar nada**. Com 2/min, 3 mil jobs de campanha
+pausada seguram a fila por ~25 h e toda campanha nova parece travada, porque a fila é FIFO e os
+jobs dela entram no fim. Falha ao limpar não derruba o pause/cancel: o estado no banco é o que manda.
+
+JobId já concluído é apagado antes de reenfileirar (`removeFinishedJob` em `addJob`).
+`removeOnComplete: 1_000` / `removeOnFail: 5_000` mantêm o id no Redis, e `add` com id repetido
+é **engolido em silêncio** (`isBullDuplicateJobError`) — sem apagar antes, **Retomar** devolvia o
+destinatário para `QUEUED` sem job e ele nunca recebia mensagem.
 
 ## 4. Modelo de dados
 
@@ -843,6 +856,13 @@ Religar / atualizar: runbook em [`README.md`](README.md) (`git pull`, `migrate d
 
 HTTPS (Let's Encrypt) **não** está neste ambiente. Senha root e `.env` não entram neste arquivo.
 
+Resultado na entrega 0.16.23 — **Pausar e cancelar limpam a fila**: `pauseCampaign` e
+`cancelCampaign` chamam `removeCampaignJobs` e tiram os jobs pendentes da campanha de
+`campaign-send` e `campaign-retry`. Antes o job ficava no Redis: o worker puxava, via a campanha
+parada, descartava, e ainda assim gastava um slot do ritmo — 3 mil jobs de campanha pausada
+seguravam a fila por ~25 h e a campanha nova parecia travada. `addJob` também apaga o jobId
+concluído antes de reenfileirar, senão **Retomar** devolvia o destinatário para `QUEUED` sem job
+(o `add` duplicado é engolido em silêncio) e ele nunca recebia mensagem.
 Resultado na entrega 0.16.22 — **Cadência de 2 por minuto**: `CAMPAIGN_SENDS_PER_MINUTE` passa de
 5 para 2 (1 a cada 30 s no limiter do `campaign-send`), depois de o WhatsApp restringir por 5 h a
 conta nova que disparava 5/min (erro 463 nos logs do worker e sessão caindo com `conflict` ~20 s

@@ -1,6 +1,6 @@
 {
   "name": "crm-prospeccao",
-  "version": "0.16.22",
+  "version": "0.16.23",
   "private": true,
   "description": "CRM de prospecção, leads, kanban, follow-up, campanhas e inbox",
   "scripts": {

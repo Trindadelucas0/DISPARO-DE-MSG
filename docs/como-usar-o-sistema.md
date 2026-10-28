@@ -343,6 +343,7 @@ Dentro de uma campanha (clique no **nome** na lista):
 9. Acompanhe **Já nesta campanha**, **Enviados**, **Ainda no público**. Clique em **Destinatários** para ver cada um.
 10. **Próximo lote:** em **Adicionar mais**, coloque a quantidade e clique em **Adicionar à fila**. Quem já recebeu nesta campanha fica de fora.
 11. **Retorno:** depois das horas de **Esperar (horas)**, o sistema tenta mandar sozinho se a pessoa **não** respondeu — **se o TI deixou o sistema ligado**. Se passou o tempo e nada saiu, clique em **Disparar retorno agora**. Quem já ganhou o retorno não recebe de novo. **Pausar** ou **Cancelar** para. Se o selo estiver **Em envio** e nada sair, clique em **Retomar**.
+12. **Pausar para na hora.** A fila de quem ainda não recebeu é desfeita, e ninguém da campanha pausada ocupa o ritmo de envio das outras. **Retomar** monta a fila de novo, do ponto em que parou: quem já recebeu não recebe de novo.
 
 Cem contatos levam cerca de **20 minutos** nesse ritmo. Mensagem avulsa no lead e resposta na Inbox **não** entram nesse teto.
 
