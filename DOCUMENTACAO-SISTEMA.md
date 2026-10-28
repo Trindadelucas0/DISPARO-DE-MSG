@@ -19,9 +19,9 @@ continua sendo a fonte de regra, campo e path de código. Tutorial para o client
 [`docs/como-usar-o-sistema.md`](docs/como-usar-o-sistema.md)
 (guia visual: wireframe ASCII por tela e passos “clique aqui”; linguagem do dia a dia).
 
-- Versão: 0.16.23 — Pausar e cancelar limpam a fila
+- Versão: 0.16.24 — Agenda em .vcf para transmissão manual
 - Fases entregues: 1 a 9 (MVP) + restyle 0.11.0 + identidade 0.12.0 + atendimento 0.13.0 + retorno 0.14.0
-- Última atualização: 28/10/2026 — pausar ou cancelar campanha tira os jobs pendentes da fila; reenfileirar não é mais engolido como duplicado. Antes, 0.16.22 — cadência de 2 por minuto.
+- Última atualização: 28/10/2026 — exportação da agenda em .vcf, em grupos rotulados para lista de transmissão. Antes, 0.16.23 — pausar e cancelar limpam a fila.
 
 ---
 
@@ -694,6 +694,26 @@ Comportamento do job:
 - **Filtro de ativas.** Ligado por padrão. O resumo mostra quantas empresas ficaram de fora e por
   qual situação cadastral.
 
+### 7.1 Exportar a agenda em .vcf (transmissão manual)
+
+`npm run contatos:vcf` (script `scripts/exportar-contatos-vcf.ts`, regras puras em
+`src/lib/contacts/vcard.ts`). Gera um `.vcf` por grupo na pasta `data/contatos-vcf/` mais um
+`indice.csv`. Opções: `--tamanho=50` (contatos por grupo), `--campanha=<id>` (só o público
+daquela campanha) e `--saida=<pasta>`.
+
+O nome de cada contato começa com o rótulo do grupo — `A01 Empresa`, `A02 Empresa` — porque a
+agenda do celular ordena por nome e o grupo inteiro fica junto na hora de marcar a lista de
+transmissão. Rótulos: `A`…`Z` e, quando o alfabeto acaba, `A1`…`Z1`, `A2`… Só celular entra
+(`parsePhone().isMobile`); fixo e repetido ficam de fora. Formato vCard 3.0, telefone em E.164,
+que iPhone e Android importam sem conversão.
+
+O arquivo sai **no servidor**: mandar para o celular (e-mail, Drive, cabo) e confirmar "importar
+todos" lá. Não há como gravar na agenda do aparelho a partir daqui.
+
+**Limite do WhatsApp:** a lista de transmissão entrega **só para quem tem o seu número salvo na
+agenda**. Para lead frio — que nunca falou com o número — a transmissão não chega. O `.vcf` serve
+para ter a base no aparelho e mandar manualmente; não substitui o disparo da campanha.
+
 ## 8. Cache, auditoria e limites
 
 | Recurso | Configuração | Código |
@@ -856,6 +876,12 @@ Religar / atualizar: runbook em [`README.md`](README.md) (`git pull`, `migrate d
 
 HTTPS (Let's Encrypt) **não** está neste ambiente. Senha root e `.env` não entram neste arquivo.
 
+Resultado na entrega 0.16.24 — **Agenda em .vcf**: `npm run contatos:vcf` exporta os leads com
+celular em grupos de tamanho definido (`--tamanho`, padrão 50), um `.vcf` por grupo mais
+`indice.csv`. O nome do contato começa com o rótulo (`A01`, `A02`, … `A1`…`Z1`) para a agenda do
+celular manter o grupo junto na hora de marcar a lista de transmissão. Regras puras em
+`src/lib/contacts/vcard.ts`, com teste. Vale lembrar que a transmissão do WhatsApp só entrega para
+quem tem o número salvo: para lead frio, não chega.
 Resultado na entrega 0.16.23 — **Pausar e cancelar limpam a fila**: `pauseCampaign` e
 `cancelCampaign` chamam `removeCampaignJobs` e tiram os jobs pendentes da campanha de
 `campaign-send` e `campaign-retry`. Antes o job ficava no Redis: o worker puxava, via a campanha

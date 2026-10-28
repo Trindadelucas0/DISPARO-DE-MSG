@@ -1,6 +1,6 @@
 {
   "name": "crm-prospeccao",
-  "version": "0.16.23",
+  "version": "0.16.24",
   "private": true,
   "description": "CRM de prospecção, leads, kanban, follow-up, campanhas e inbox",
   "scripts": {
@@ -25,6 +25,7 @@
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed",
     "import:xlsx": "tsx scripts/import-xlsx.ts",
+    "contatos:vcf": "tsx scripts/exportar-contatos-vcf.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "npm run lint && npm run typecheck && npm run design:check && npm run test"

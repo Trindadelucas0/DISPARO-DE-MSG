@@ -1012,6 +1012,30 @@ npm run import:xlsx -- --all-situacoes   # inclui BAIXADA, INAPTA, SUSPENSA e NU
 npm run import:xlsx -- caminho\a.xlsx    # arquivo específico
 ```
 
+### Levar a base para a agenda do celular (lista de transmissão)
+
+Serve para marcar a lista de transmissão no aparelho sem catar número a número.
+
+```powershell
+npm run contatos:vcf                     # todos os leads com celular, 50 por grupo
+npm run contatos:vcf -- --tamanho=256    # outro tamanho de grupo
+npm run contatos:vcf -- --campanha=<id>  # só o público daquela campanha
+```
+
+Sai uma pasta `data/contatos-vcf` com um arquivo por grupo — `A.vcf`, `B.vcf`, … `A1.vcf` — e um
+`indice.csv` dizendo quem caiu em qual grupo. Cada contato entra na agenda já com o rótulo no
+começo do nome (`A01 Empresa`, `A02 Empresa`), então o celular mostra o grupo inteiro junto e você
+marca de uma vez.
+
+No celular: mande o arquivo para você mesmo (e-mail, Drive ou cabo), abra e confirme **importar
+todos**. Só depois disso os contatos aparecem no WhatsApp. Não dá para gravar na agenda do
+aparelho direto do servidor.
+
+**Antes de contar com isso:** a lista de transmissão do WhatsApp entrega **só para quem tem o seu
+número salvo na agenda**. Quem nunca falou com você não recebe — a mensagem sai, aparece como
+enviada, e não chega em ninguém da lista. Para lead frio, continua valendo a campanha pelo
+sistema, com a conta conectada.
+
 
 
 ### Comandos úteis
