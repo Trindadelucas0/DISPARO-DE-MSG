@@ -120,8 +120,7 @@ function analyzeSheet(sheet: SheetData, options: AnalyzeOptions): AnalyzeResult 
   let inactiveRows = 0;
 
   sheet.rows.forEach((row, index) => {
-    // Linha 1 é o cabeçalho: a primeira linha de dados é a 2 do arquivo.
-    const rowNumber = index + 2;
+    const rowNumber = sheet.headerRowNumber + index + 1;
 
     const outcome = normalizeRow(row, {
       mapping,
@@ -157,7 +156,9 @@ function analyzeSheet(sheet: SheetData, options: AnalyzeOptions): AnalyzeResult 
     const situacao = parsed.data.situacaoCadastral ?? 'NÃO INFORMADA';
     situacaoCount.set(situacao, (situacaoCount.get(situacao) ?? 0) + 1);
 
-    if (options.onlyActive && situacao !== 'ATIVA') {
+    // Fonte sem situação cadastral não pode ser classificada como inativa.
+    // O filtro exclui apenas uma situação explicitamente diferente de ATIVA.
+    if (options.onlyActive && situacao !== 'ATIVA' && situacao !== 'NÃO INFORMADA') {
       inactiveRows += 1;
       return;
     }

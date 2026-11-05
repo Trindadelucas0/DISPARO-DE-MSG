@@ -423,13 +423,19 @@ Quatro passos: **arquivo → mapeamento → prévia → execução**. Só ADMIN 
 
 | Passo | O que acontece | Código |
 | --- | --- | --- |
-| 1. Arquivo | Upload `.xlsx`/`.xlsm` até 25 MB, guardado em `uploads/<uuid>.xlsx`. Chave "somente empresas ativas" ligada por padrão | `src/app/api/import/upload/route.ts`, `src/server/services/import/storage.ts` |
-| 2. Mapeamento | Detecção automática por nome de cabeçalho normalizado (sem acento, sem caixa, sem pontuação), sobrescrevível campo a campo | `src/server/services/import/columns.ts` |
+| 1. Arquivo | Upload `.xlsx`/`.xlsm` até 25 MB, guardado em `uploads/<uuid>.xlsx`. O cabeçalho pode estar nas 20 primeiras linhas; título e data anteriores são ignorados. Chave "somente empresas ativas" ligada por padrão | `src/app/api/import/upload/route.ts`, `src/server/services/import/storage.ts`, `src/server/services/import/parser.ts` |
+| 2. Mapeamento | Detecção automática por nome de cabeçalho normalizado (sem acento, sem caixa, sem pontuação), incluindo `Nome/Razão social`, `Telefone/Celular`, `Nome/Nome Fantasia` e `Categoria`; sobrescrevível campo a campo | `src/server/services/import/columns.ts` |
 | 3. Prévia | Contadores, situações, duplicados, avisos e 20 primeiras linhas. **Nada é gravado** | `buildPreview` |
 | 4. Execução | Responde na hora com o id do job; a carga roda em segundo plano e o progresso fica em `ImportJob` | `src/app/api/import/run/route.ts`, `runImport` |
 
 O arquivo temporário é apagado ao fim da execução, e sobras com mais de 6 horas são limpas no
 próximo upload.
+
+Relatório comercial com `Tipo=PF` usa o CPF de `Documento` para uma chave interna determinística;
+essa chave não passa na validação de CNPJ e a interface continua mostrando CNPJ como `—`. O CPF
+original fica em `rawImport`. Para PJ, CNPJ válido continua obrigatório. Se a fonte não informa
+situação cadastral, a opção "somente empresas ativas" não inventa uma situação nem descarta a
+linha; ela exclui apenas valores explicitamente diferentes de `ATIVA`.
 
 ### `/dashboard`
 
@@ -914,6 +920,10 @@ conta nova que disparava 5/min (erro 463 nos logs do worker e sessão caindo com
 depois de cada reconexão). A tela, a estimativa de minutos restantes e o aviso do retorno leem a
 mesma constante. Religar o worker (`docker compose -f docker-compose.vps.yml up -d --build worker`)
 é obrigatório: o limiter é lido na subida.
+Resultado na entrega 0.16.22 — **Importação de relatório de clientes**: o parser localiza o
+cabeçalho nas 20 primeiras linhas, reconhece os rótulos do relatório comercial e grava Categoria
+como Segmento. Linhas PF usam o CPF como identificador interno sem exibir CNPJ falso. Fonte sem
+situação cadastral não é tratada automaticamente como inativa.
 Resultado na entrega 0.16.21 — **Edição de templates corrigida**: o cliente separa o `id` usado na
 URL antes de montar o JSON do `PATCH`; a validação estrita da API deixa de rejeitar toda edição como
 “Dados inválidos na requisição”. Teste cobre payload com texto e mídia.

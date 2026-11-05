@@ -1,12 +1,14 @@
 /**
  * Auto-detecção de colunas da planilha.
  *
- * O cabeçalho da fonte atual está na linha 1 da aba `empresas`, mas o mapeamento
- * é por nome normalizado (sem acento, sem caixa, sem pontuação), não por posição.
+ * O cabeçalho pode estar nas primeiras linhas da planilha, e o mapeamento é por
+ * nome normalizado (sem acento, sem caixa, sem pontuação), não por posição.
  * O usuário pode sobrescrever qualquer coluna na tela /import.
  */
 
 export const IMPORT_FIELDS = [
+  'tipo',
+  'documento',
   'cnpj',
   'razaoSocial',
   'nomeFantasia',
@@ -22,6 +24,7 @@ export const IMPORT_FIELDS = [
   'dataAbertura',
   'telefones',
   'email',
+  'segmento',
   'capitalSocial',
   'cnaePrincipalCodigo',
   'cnaePrincipalDescricao',
@@ -45,18 +48,25 @@ export interface ImportFieldSpec {
 }
 
 export const IMPORT_FIELD_SPECS: readonly ImportFieldSpec[] = [
+  { field: 'tipo', label: 'Tipo', required: false, aliases: ['tipo', 'tipo de pessoa'] },
+  {
+    field: 'documento',
+    label: 'Documento',
+    required: false,
+    aliases: ['documento', 'cpf cnpj', 'cpf ou cnpj'],
+  },
   { field: 'cnpj', label: 'CNPJ', required: true, aliases: ['cnpj', 'cnpj completo', 'numero cnpj'] },
   {
     field: 'razaoSocial',
     label: 'Razão social',
     required: true,
-    aliases: ['razao social', 'razaosocial', 'nome empresarial', 'empresa'],
+    aliases: ['razao social', 'razaosocial', 'nome razao social', 'nome empresarial', 'empresa'],
   },
   {
     field: 'nomeFantasia',
     label: 'Nome fantasia',
     required: false,
-    aliases: ['nome fantasia', 'nomefantasia', 'fantasia'],
+    aliases: ['nome fantasia', 'nomefantasia', 'nome nome fantasia', 'fantasia'],
   },
   {
     field: 'situacaoCadastral',
@@ -92,9 +102,15 @@ export const IMPORT_FIELD_SPECS: readonly ImportFieldSpec[] = [
     field: 'telefones',
     label: 'Telefones',
     required: false,
-    aliases: ['telefones', 'telefone', 'ddd telefone'],
+    aliases: ['telefones', 'telefone', 'telefone celular', 'ddd telefone'],
   },
   { field: 'email', label: 'E-mail', required: false, aliases: ['e mail', 'email', 'correio eletronico'] },
+  {
+    field: 'segmento',
+    label: 'Segmento',
+    required: false,
+    aliases: ['segmento', 'categoria'],
+  },
   {
     field: 'capitalSocial',
     label: 'Capital social',

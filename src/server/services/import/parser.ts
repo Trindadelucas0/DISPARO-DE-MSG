@@ -12,8 +12,10 @@ import ExcelJS from 'exceljs';
 
 export interface SheetData {
   readonly sheetName: string;
+  /** Número da linha que contém os cabeçalhos no arquivo original. */
+  readonly headerRowNumber: number;
   readonly headers: readonly string[];
-  /** Linhas de dados na ordem do arquivo. O índice 0 é a linha 2 da planilha. */
+  /** Linhas de dados na ordem do arquivo, logo depois do cabeçalho detectado. */
   readonly rows: readonly (readonly string[])[];
 }
 
@@ -38,7 +40,8 @@ export function cellToString(value: ExcelJS.CellValue): string {
 }
 
 function readSheet(worksheet: ExcelJS.Worksheet): SheetData {
-  const headerRow = worksheet.getRow(1);
+  const headerRowNumber = findHeaderRow(worksheet);
+  const headerRow = worksheet.getRow(headerRowNumber);
   const columnCount = Math.max(worksheet.columnCount, headerRow.cellCount);
 
   const headers: string[] = [];
@@ -48,7 +51,7 @@ function readSheet(worksheet: ExcelJS.Worksheet): SheetData {
 
   const rows: string[][] = [];
   worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-    if (rowNumber === 1) return;
+    if (rowNumber <= headerRowNumber) return;
     const values: string[] = [];
     for (let column = 1; column <= columnCount; column += 1) {
       values.push(cellToString(row.getCell(column).value));
@@ -57,7 +60,42 @@ function readSheet(worksheet: ExcelJS.Worksheet): SheetData {
     if (values.some((value) => value.length > 0)) rows.push(values);
   });
 
-  return { sheetName: worksheet.name, headers, rows };
+  return { sheetName: worksheet.name, headerRowNumber, headers, rows };
+}
+
+/**
+ * Relatórios exportados podem trazer título e data antes do cabeçalho. Procura
+ * nas 20 primeiras linhas a que reconhece CNPJ e razão social; se nenhuma
+ * reconhecer os dois campos obrigatórios, preserva o comportamento da linha 1.
+ */
+function findHeaderRow(worksheet: ExcelJS.Worksheet): number {
+  const limit = Math.min(20, worksheet.rowCount);
+
+  for (let rowNumber = 1; rowNumber <= limit; rowNumber += 1) {
+    const row = worksheet.getRow(rowNumber);
+    const values: string[] = [];
+    for (let column = 1; column <= Math.max(worksheet.columnCount, row.cellCount); column += 1) {
+      values.push(cellToString(row.getCell(column).value));
+    }
+
+    const normalized = values.map((value) =>
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim(),
+    );
+    const hasCnpj = normalized.includes('cnpj');
+    const hasCompanyName = normalized.some((value) =>
+      ['razao social', 'razaosocial', 'nome razao social', 'nome empresarial', 'empresa'].includes(
+        value,
+      ),
+    );
+    if (hasCnpj && hasCompanyName) return rowNumber;
+  }
+
+  return 1;
 }
 
 /** Escolhe a aba `empresas` quando existir; senão, a primeira com conteúdo. */

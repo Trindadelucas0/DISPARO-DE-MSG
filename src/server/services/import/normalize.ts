@@ -135,6 +135,32 @@ export interface NormalizedLead {
 
 const emailSchema = z.string().email();
 
+function isValidCpf(value: string): boolean {
+  const cpf = onlyDigits(value);
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
+
+  const digit = (length: number): number => {
+    let sum = 0;
+    for (let index = 0; index < length; index += 1) {
+      sum += Number(cpf[index]) * (length + 1 - index);
+    }
+    const remainder = (sum * 10) % 11;
+    return remainder === 10 ? 0 : remainder;
+  };
+
+  return digit(9) === Number(cpf[9]) && digit(10) === Number(cpf[10]);
+}
+
+/** Chave interna determinística para pessoa física; nunca é exibida como CNPJ. */
+function personalDocumentKey(cpf: string): string {
+  const prefix = `99${cpf}`;
+  for (let last = 9; last >= 0; last -= 1) {
+    const candidate = `${prefix}${last}`;
+    if (!isValidCnpj(candidate)) return candidate;
+  }
+  return `${prefix}0`;
+}
+
 export interface NormalizeContext {
   readonly mapping: ColumnMapping;
   readonly headers: readonly string[];
@@ -166,13 +192,22 @@ export function normalizeRow(
 
   // --- CNPJ: chave de deduplicação, então é validado de verdade -------------
   const rawCnpj = get('cnpj');
-  const cnpj = normalizeCnpj(rawCnpj);
-  if (!cnpj) {
+  const rawType = text(get('tipo'));
+  const rawDocument = text(get('documento'));
+  const isPerson = normalizeKey(rawType ?? '') === 'pf';
+  const cpf = isPerson ? onlyDigits(rawDocument ?? '') : '';
+  const cnpj = normalizeCnpj(rawCnpj) ?? (isValidCpf(cpf) ? personalDocumentKey(cpf) : null);
+  if (!cnpj && isPerson) {
+    issues.push({
+      field: 'documento',
+      reason: `CPF ausente ou inválido (recebido: "${rawDocument ?? ''}").`,
+    });
+  } else if (!cnpj) {
     issues.push({
       field: 'cnpj',
       reason: `CNPJ ausente ou sem 14 dígitos (recebido: "${rawCnpj ?? ''}").`,
     });
-  } else if (!isValidCnpj(cnpj)) {
+  } else if (!isPerson && !isValidCnpj(cnpj)) {
     issues.push({ field: 'cnpj', reason: `CNPJ com dígito verificador inválido: ${cnpj}.` });
   }
 
@@ -225,9 +260,14 @@ export function normalizeRow(
   const cepDigits = onlyDigits(get('cep') ?? '');
 
   const cnaePrincipalDescricao = text(get('cnaePrincipalDescricao'));
+  const segmento = text(get('segmento')) ?? cnaePrincipalDescricao;
 
   // --- Colunas não mapeadas viram rawImport --------------------------------
   const rawImport: Record<string, string> = {};
+  if (isPerson && rawDocument) {
+    rawImport.Tipo = rawType ?? 'PF';
+    rawImport.Documento = rawDocument;
+  }
   for (const index of context.unmappedIndexes) {
     const header = context.headers[index];
     const value = row[index];
@@ -252,8 +292,9 @@ export function normalizeRow(
     bairro: text(get('bairro')),
     cep: cepDigits.length === 8 ? cepDigits : null,
     ibge: text(get('ibge')),
-    // O segmento nasce da descrição do CNAE principal (PRD §8).
-    segmento: cnaePrincipalDescricao,
+    // Fontes comerciais podem trazer Segmento/Categoria diretamente. Na
+    // planilha da Receita, a descrição do CNAE principal continua sendo o fallback.
+    segmento,
     porte: normalizePorte(get('porte')),
     origem: context.origem,
     cnaePrincipalCodigo: text(get('cnaePrincipalCodigo')),

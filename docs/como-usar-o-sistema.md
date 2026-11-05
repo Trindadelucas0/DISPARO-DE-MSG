@@ -666,7 +666,7 @@ Sem conta **Conectada**, no lead o botão continua **Abrir WhatsApp** (abre o Wh
 
 **Quem usa:** Administrador e Gestor. Título na tela: **Importar planilha**.
 
-**O que é:** entrar empresas em lote pela planilha da Receita (arquivo `.xlsx` ou `.xlsm`, até 25 MB). Cadastro à mão é **Adicionar contato** em Leads, não aqui.
+**O que é:** entrar empresas e contatos em lote por planilha da Receita ou relatório de clientes (arquivo `.xlsx` ou `.xlsm`, até 25 MB). Cadastro à mão é **Adicionar contato** em Leads, não aqui.
 
 ```
 +--------------------------------------------------------------------+
@@ -689,13 +689,18 @@ Sem conta **Conectada**, no lead o botão continua **Abrir WhatsApp** (abre o Wh
 #### Passos
 
 1. No menu da esquerda, clique em **Importar**.
-2. Arraste o arquivo ou clique em **Escolher arquivo**. O cabeçalho precisa estar na **primeira linha**.
+2. Arraste o arquivo ou clique em **Escolher arquivo**. O sistema procura o cabeçalho nas **20 primeiras linhas** e aceita título/data antes dele.
 3. **Importar somente empresas ativas** já vem ligada.
 4. Confira os seletores das colunas. Sem CNPJ ou razão social, não avança. Clique em **Ver prévia**.
 5. Na prévia **nada foi gravado ainda**. Clique em **Importar N lead(s)**. Se N for zero, o botão não funciona.
 6. Pode sair da tela; a importação continua. No fim: **Ver relatório** ou **Importar outra planilha**. A tabela **Importações anteriores** mostra Na fila, Rodando, Concluída, Falhou, Cancelada.
 
 Reimportar a mesma planilha **não duplica** (a chave é o CNPJ).
+
+Em relatório de clientes, linhas **PJ** usam CNPJ e linhas **PF** usam o CPF da coluna Documento.
+O CPF identifica o contato internamente; a coluna CNPJ continua aparecendo como `—`. A coluna
+**CATEGORIA** entra como **Segmento**. Quando a planilha não traz situação cadastral, o sistema
+não considera a linha inativa apenas por essa ausência.
 
 #### O que NÃO fazer
 
