@@ -50,6 +50,8 @@ import {
   nextRecipientBatch,
   recipientIdempotencyKey,
 } from '@/server/queue/campaign-helpers';
+import { optedOutPhoneSet } from '@/server/services/opt-out.service';
+import { clearCampaignSafetyPauseForManualResume } from '@/server/services/campaign-safety.service';
 
 export const campaignDraftSchema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -60,11 +62,12 @@ export const campaignPatchSchema = z
     name: z.string().trim().min(2).max(120).optional(),
     wizardStep: z.number().int().min(1).max(5).optional(),
     audienceFilter: leadFiltersSchema.optional(),
-    excludeOptOut: z.boolean().optional(),
+    excludeOptOut: z.literal(true).optional(),
     recipientLimit: z.number().int().min(1).max(100_000).nullable().optional(),
     routingMode: z.enum(['MANUAL', 'CURRENT_OWNER', 'RULES', 'ROUND_ROBIN']).optional(),
     templateId: z.string().min(1).nullable().optional(),
     followUpTemplateId: z.string().min(1).nullable().optional(),
+    followUpEnabled: z.boolean().optional(),
     followUpDelayHours: z
       .number()
       .int()
@@ -107,7 +110,7 @@ function serializeCampaign(
     status: row.status,
     wizardStep: row.wizardStep,
     routingMode: row.routingMode,
-    excludeOptOut: row.excludeOptOut,
+    excludeOptOut: true,
     recipientLimit: row.recipientLimit,
     audienceFilter: row.audienceFilter as LeadFilters,
     totalCount: row.totalCount,
@@ -117,6 +120,7 @@ function serializeCampaign(
     templateId: row.templateId,
     templateName: row.template?.name ?? null,
     followUpTemplateId: row.followUpTemplateId,
+    followUpEnabled: row.followUpEnabled,
     followUpTemplateName: row.followUpTemplate?.name ?? null,
     followUpDelayHours: row.followUpDelayHours ?? CAMPAIGN_FOLLOW_UP_DELAY_HOURS_DEFAULT,
     followUpStartedAt: row.followUpStartedAt?.toISOString() ?? null,
@@ -124,6 +128,9 @@ function serializeCampaign(
     whatsappAccountName: row.whatsappAccount?.name ?? null,
     whatsappProvider: row.whatsappAccount?.provider ?? null,
     whatsappSessionStatus: row.whatsappAccount?.sessionStatus ?? null,
+    campaignDailyAttempts: row.whatsappAccount?.campaignDailyAttempts ?? 0,
+    campaignSafetyPausedAt: row.whatsappAccount?.campaignSafetyPausedAt?.toISOString() ?? null,
+    campaignSafetyPauseReason: row.whatsappAccount?.campaignSafetyPauseReason ?? null,
     createdById: row.createdById,
     createdByNome: row.createdBy.name,
     startedAt: row.startedAt?.toISOString() ?? null,
@@ -207,6 +214,7 @@ export async function patchCampaign(user: SessionUser, id: string, input: z.infe
       ? { connect: { id: input.followUpTemplateId } }
       : { disconnect: true };
   }
+  if (input.followUpEnabled !== undefined) data.followUpEnabled = input.followUpEnabled;
   if (input.followUpDelayHours !== undefined) {
     data.followUpDelayHours = clampFollowUpDelayHours(input.followUpDelayHours);
   }
@@ -228,10 +236,20 @@ export async function countCampaignAudience(user: SessionUser, filters: LeadFilt
   const scope = leadScopeWhere(user);
   const where = buildLeadWhere(filters, scope);
 
-  const [found, withWhatsapp, sample] = await Promise.all([
+  const [found, withWhatsapp, unconsented, sample] = await Promise.all([
     prisma.lead.count({ where }),
     prisma.lead.count({
       where: { AND: [where, { NOT: { whatsapp: null } }, { whatsapp: { not: '' } }] },
+    }),
+    prisma.lead.count({
+      where: {
+        AND: [
+          where,
+          { NOT: { whatsapp: null } },
+          { whatsapp: { not: '' } },
+          { whatsappConsentAt: null },
+        ],
+      },
     }),
     prisma.lead.findMany({
       where: filters.ids?.length
@@ -263,6 +281,7 @@ export async function countCampaignAudience(user: SessionUser, filters: LeadFilt
     found,
     withWhatsapp,
     withoutWhatsapp: Math.max(0, found - withWhatsapp),
+    unconsented,
     optOut,
     sample,
   };
@@ -365,14 +384,9 @@ async function materializeRecipients(
     select: { id: true, whatsapp: true },
   });
 
-  const optOutSet = new Set<string>();
-  if (excludeOptOut && leads.length > 0) {
-    const opts = await prisma.optOut.findMany({
-      where: { leadId: { in: leads.map((l) => l.id) } },
-      select: { leadId: true, phone: true },
-    });
-    for (const row of opts) optOutSet.add(`${row.leadId}:${row.phone}`);
-  }
+  const optOutSet = excludeOptOut
+    ? await optedOutPhoneSet(leads.map((lead) => lead.whatsapp ?? ''))
+    : new Set<string>();
 
   const rows: { campaignId: string; leadId: string; phone: string; idempotencyKey: string }[] = [];
   let skippedOptOut = 0;
@@ -385,7 +399,7 @@ async function materializeRecipients(
       continue;
     }
     const digits = phone.replace(/^55/, '');
-    if (excludeOptOut && (optOutSet.has(`${lead.id}:${digits}`) || optOutSet.has(`${lead.id}:${lead.whatsapp}`))) {
+    if (excludeOptOut && optOutSet.has(digits)) {
       skippedOptOut += 1;
       continue;
     }
@@ -461,7 +475,11 @@ async function enqueuePendingInitial(campaignId: string): Promise<number> {
 async function rescheduleAutomaticFollowUps(
   campaign: NonNullable<Awaited<ReturnType<typeof findCampaign>>>,
 ) {
-  if (!campaign.followUpTemplateId || campaign.followUpTemplateId === campaign.templateId) return;
+  if (
+    !campaign.followUpEnabled ||
+    !campaign.followUpTemplateId ||
+    campaign.followUpTemplateId === campaign.templateId
+  ) return;
   const delayHours = campaign.followUpDelayHours ?? CAMPAIGN_FOLLOW_UP_DELAY_HOURS_DEFAULT;
   for (let skip = 0; ; ) {
     const rows = await prisma.campaignRecipient.findMany({
@@ -516,7 +534,11 @@ async function revertUnsentDraft(campaignId: string): Promise<void> {
   });
 }
 
-export async function startCampaign(user: SessionUser, id: string) {
+export async function startCampaign(
+  user: SessionUser,
+  id: string,
+  options: { confirmUnconsented?: boolean } = {},
+) {
   assertManager(user);
   if (!isRedisAvailable()) {
     throw new BadRequestError(
@@ -549,18 +571,26 @@ export async function startCampaign(user: SessionUser, id: string) {
     );
   }
   assertCampaignMediaSupported(campaign);
+  if (campaign.status === 'PAUSED' && campaign.whatsappAccountId) {
+    await clearCampaignSafetyPauseForManualResume(campaign.whatsappAccountId);
+  }
 
   const filters = leadFiltersSchema.parse(campaign.audienceFilter ?? {});
   const wasDraft = campaign.status === 'DRAFT';
 
   try {
     if (wasDraft) {
-      const audience = await countCampaignAudience(user, filters, campaign.excludeOptOut);
+      const audience = await countCampaignAudience(user, filters, true);
+      if (audience.unconsented > 0 && !options.confirmUnconsented) {
+        throw new BadRequestError(
+          `${audience.unconsented} contato(s) não têm consentimento registrado. Confirme o aviso antes de iniciar.`,
+        );
+      }
       const material = await materializeRecipients(
         user,
         id,
         filters,
-        campaign.excludeOptOut,
+        true,
         campaign.recipientLimit,
       );
       if (material.recipientCount === 0) {
@@ -574,6 +604,8 @@ export async function startCampaign(user: SessionUser, id: string) {
         withWhatsappCount: material.withWhatsapp,
         withoutWhatsappCount: audience.withoutWhatsapp,
         optOutCount: material.skippedOptOut,
+        excludeOptOut: true,
+        unconsentedConfirmedAt: audience.unconsented > 0 ? new Date() : null,
       });
     } else {
       await updateCampaign(id, { status: 'RUNNING', pausedAt: null });
@@ -688,6 +720,9 @@ export async function startCampaignFollowUp(user: SessionUser, id: string) {
   if (!campaign.followUpTemplateId) {
     throw new BadRequestError('Escolha o template de retorno antes de disparar.');
   }
+  if (!campaign.followUpEnabled) {
+    throw new BadRequestError('Ative o retorno conscientemente antes de disparar a segunda mensagem.');
+  }
   if (campaign.followUpTemplateId === campaign.templateId) {
     throw new BadRequestError('O retorno precisa de um template diferente da primeira mensagem.');
   }
@@ -793,7 +828,7 @@ export async function addCampaignRecipients(
     user,
     id,
     filters,
-    campaign.excludeOptOut,
+    true,
     count,
     existing,
   );

@@ -299,7 +299,8 @@ Textos prontos (depois que o Administrador rodou a carga inicial): tags **HOT**,
 
 **Quem usa:** Administrador e Gestor. O Vendedor **não** vê este menu.
 
-**O que é:** disparo em lote pelo WhatsApp já conectado. Sai no ritmo de **2 envios por minuto**.
+**O que é:** disparo controlado pelo WhatsApp conectado: **1 tentativa por minuto**, pausa de
+**5 minutos depois de cada 3** e teto de **60 tentativas por dia e por conta**.
 
 Se **Iniciar campanha** recusar, peça para o responsável de TI **deixar o sistema ligado** (detalhe só no apêndice).
 
@@ -319,7 +320,7 @@ Dentro de uma campanha (clique no **nome** na lista):
 +--------------------------------------------------------------------+
 |  Nome da campanha     [ Pausar ] [ Retomar ] [ Cancelar ]          |
 |  Já nesta campanha / Enviados / Ainda no público                   |
-|  público, [ Enviar para no máximo ], Template, Template de retorno |
+|  público, consentimento, quantidade, Template, retorno opcional   |
 |  Esperar (horas), distribuição, conta WhatsApp                     |
 |  [ Incluir na campanha ]  [ Usar só os selecionados ]              |
 |  [ Só cadastro manual ]  [ Salvar rascunho ]  [ Iniciar campanha ] |
@@ -338,19 +339,21 @@ Dentro de uma campanha (clique no **nome** na lista):
 4. Clique em **Nova campanha**.
 5. No público: cadastre um número com **Incluir na campanha**, ou marque linhas e clique em **Usar só os selecionados**. Se você **não** marcar, o disparo usa o filtro inteiro. **Só cadastro manual** recorta quem não veio da planilha.
 6. Em **Leads**, você também pode marcar empresas e clicar em **Disparar campanha**: abre o rascunho já com essas pessoas.
-7. Preencha quantidade em **Enviar para no máximo** (vazio = todos com WhatsApp), o template da primeira mensagem, o **Template de retorno** (tem que ser **outro** texto; o padrão do sistema é **Follow-up — sem resposta**), **Esperar (horas)** (padrão **2**), como distribuir as respostas e a conta WhatsApp.
-8. Clique em **Salvar rascunho** ou em **Iniciar campanha**.
-9. Acompanhe **Já nesta campanha**, **Enviados**, **Ainda no público**. Clique em **Destinatários** para ver cada um.
-10. **Próximo lote:** em **Adicionar mais**, coloque a quantidade e clique em **Adicionar à fila**. Quem já recebeu nesta campanha fica de fora.
-11. **Retorno:** depois das horas de **Esperar (horas)**, o sistema tenta mandar sozinho se a pessoa **não** respondeu — **se o TI deixou o sistema ligado**. Se passou o tempo e nada saiu, clique em **Disparar retorno agora**. Quem já ganhou o retorno não recebe de novo. **Pausar** ou **Cancelar** para. Se o selo estiver **Em envio** e nada sair, clique em **Retomar**.
-12. **Pausar para na hora.** A fila de quem ainda não recebeu é desfeita, e ninguém da campanha pausada ocupa o ritmo de envio das outras. **Retomar** monta a fila de novo, do ponto em que parou: quem já recebeu não recebe de novo.
+7. Preencha quantidade, template da primeira mensagem, distribuição e conta WhatsApp. Para vídeo, anexe um MP4 de até 16 MB ao template em **Mensagens**; o texto vira legenda.
+8. **Retorno automático** vem desligado. Se realmente precisar da segunda mensagem, marque **Ativar segunda mensagem automática**, escolha outro template e o intervalo.
+9. **Opt-out** é sempre excluído. Se houver contatos sem consentimento registrado, leia e marque a confirmação antes de iniciar.
+10. Clique em **Salvar rascunho** ou em **Iniciar campanha**.
+11. Acompanhe **Proteção**, **Enviados** e **Destinatários**. Ao atingir 60 no dia ou uma pausa por risco, a retomada é manual; limite diário só libera no dia seguinte.
+12. **Próximo lote:** em **Adicionar mais**, coloque a quantidade e clique em **Adicionar à fila**. Quem já recebeu nesta campanha fica de fora.
+13. **Pausar para na hora.** A fila de quem ainda não recebeu é desfeita, e ninguém da campanha pausada ocupa o ritmo de envio das outras. **Retomar** monta a fila de novo, do ponto em que parou: quem já recebeu não recebe de novo.
 
-Cem contatos levam cerca de **20 minutos** nesse ritmo. Mensagem avulsa no lead e resposta na Inbox **não** entram nesse teto.
+Sessenta contatos levam cerca de **2 h 35 min** com as pausas. Mensagem humana avulsa no lead e resposta na Inbox não entram no teto da campanha.
 
 #### O que NÃO fazer
 
 - Não inicie campanha sem a sessão **Conectada**.
 - Não use o mesmo template na primeira mensagem e no retorno.
+- Se o contato responder **SAIR**, **PARAR**, **CANCELAR**, **REMOVER** ou **NÃO QUERO RECEBER**, o número entra em opt-out e não recebe novas campanhas.
 - Não entregue esta tela ao Vendedor: ele não tem o menu.
 
 ---
@@ -1000,7 +1003,7 @@ Cloudflare Zero Trust, não neste repositório. O CRM escuta `127.0.0.1:3001`.
 senha definida em `SEED_ADMIN_PASSWORD`. Rodar o seed de novo **não** sobrescreve
 uma senha já trocada.
 
-Campanha: teto **2 envios/minuto** no worker. Retorno automático depois de **Esperar (horas)** (padrão 2 h) via job na fila; **Disparar retorno agora** é catch-up de quem já passou o intervalo. Inbox e Enviar no lead ficam fora do teto.
+Campanha: **1 tentativa/min**, pausa 5 min a cada 3 e **60/dia/conta**. Retorno nasce desligado; quando ativado divide os mesmos limites. Falha não repete automaticamente. Inbox e envio humano no lead ficam fora.
 
 ### Importar pelo terminal
 

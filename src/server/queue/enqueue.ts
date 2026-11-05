@@ -97,18 +97,13 @@ export async function enqueueCampaignSend(
   assertQueueAvailable();
   const delay = options?.delayMs;
   await addJob(QUEUE_NAMES.campaignSend, 'send', job, job.idempotencyKey, {
-    attempts: 5,
-    backoff: { type: 'exponential', delay: 2_000 },
+    attempts: 1,
     ...(delay != null && delay > 0 ? { delay } : {}),
   });
 }
 
 export async function enqueueCampaignRetry(job: CampaignSendJob): Promise<void> {
-  assertQueueAvailable();
-  await addJob(QUEUE_NAMES.campaignRetry, 'retry', job, `retry-${job.idempotencyKey}`, {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 5_000 },
-  });
+  await enqueueCampaignSend(job);
 }
 
 export async function enqueueWhatsappInbound(job: WhatsappInboundJob): Promise<void> {

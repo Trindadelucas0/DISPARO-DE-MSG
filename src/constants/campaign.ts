@@ -82,7 +82,11 @@ export const SENT_RECIPIENT_STATUSES: readonly CampaignRecipientStatus[] = [
 ];
 
 /** Teto da fila de campanha. Inbox e envio avulso no lead não entram. */
-export const CAMPAIGN_SENDS_PER_MINUTE = 2;
+export const CAMPAIGN_SENDS_PER_MINUTE = 1;
+export const CAMPAIGN_BURST_SIZE = 3;
+export const CAMPAIGN_BURST_COOLDOWN_MS = 5 * 60_000;
+export const CAMPAIGN_DAILY_ATTEMPT_LIMIT = 60;
+export const CAMPAIGN_FAILURE_PAUSE_THRESHOLD = 3;
 
 export const CAMPAIGN_FOLLOW_UP_DELAY_HOURS_DEFAULT = 2;
 export const CAMPAIGN_FOLLOW_UP_DELAY_HOURS_MIN = 1;
@@ -107,7 +111,9 @@ export function campaignSendIntervalMs(): number {
 
 export function estimateCampaignMinutes(pendingCount: number): number {
   if (!Number.isFinite(pendingCount) || pendingCount <= 0) return 0;
-  return Math.ceil(pendingCount / CAMPAIGN_SENDS_PER_MINUTE);
+  const contacts = Math.ceil(pendingCount);
+  const completedBurstsBeforeLast = Math.floor((contacts - 1) / CAMPAIGN_BURST_SIZE);
+  return contacts + completedBurstsBeforeLast * (CAMPAIGN_BURST_COOLDOWN_MS / 60_000);
 }
 
 export function clampFollowUpDelayHours(value: number): number {

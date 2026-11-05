@@ -22,13 +22,25 @@ export const CAMPAIGN_LIST_SELECT = {
   updatedAt: true,
   templateId: true,
   followUpTemplateId: true,
+  followUpEnabled: true,
   followUpDelayHours: true,
   followUpStartedAt: true,
   whatsappAccountId: true,
   createdById: true,
   template: { select: { id: true, name: true, mediaId: true } },
   followUpTemplate: { select: { id: true, name: true, mediaId: true } },
-  whatsappAccount: { select: { id: true, name: true, phone: true, provider: true, sessionStatus: true } },
+  whatsappAccount: {
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+      provider: true,
+      sessionStatus: true,
+      campaignDailyAttempts: true,
+      campaignSafetyPausedAt: true,
+      campaignSafetyPauseReason: true,
+    },
+  },
   createdBy: { select: { id: true, name: true } },
 } satisfies Prisma.CampaignSelect;
 

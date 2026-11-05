@@ -24,7 +24,7 @@ async function main() {
   await startBaileysSessionWorker();
 
   console.log(
-    '[worker] filas ativas: campaign-send, campaign-retry, whatsapp-inbound, whatsapp-status, conversation-routing + sessão Baileys',
+    '[worker] filas ativas: campaign-send, whatsapp-inbound, whatsapp-status, conversation-routing + sessão Baileys',
   );
 }
 

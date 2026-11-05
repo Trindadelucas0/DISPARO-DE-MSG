@@ -92,10 +92,12 @@ export function CampaignDetailScreen({ id }: { id: string }) {
   const accountsQuery = useCampaignWhatsAppAccounts();
 
   const [filters, setFilters] = React.useState<LeadFilters>(defaultLeadFilters());
-  const [excludeOptOut, setExcludeOptOut] = React.useState(true);
+  const excludeOptOut = true;
   const [recipientLimitInput, setRecipientLimitInput] = React.useState('');
   const [templateId, setTemplateId] = React.useState('');
   const [followUpTemplateId, setFollowUpTemplateId] = React.useState('');
+  const [followUpEnabled, setFollowUpEnabled] = React.useState(false);
+  const [confirmUnconsented, setConfirmUnconsented] = React.useState(false);
   const [followUpDelayInput, setFollowUpDelayInput] = React.useState(
     String(CAMPAIGN_FOLLOW_UP_DELAY_HOURS_DEFAULT),
   );
@@ -110,12 +112,12 @@ export function CampaignDetailScreen({ id }: { id: string }) {
   React.useEffect(() => {
     if (!campaign.data) return;
     setFilters({ ...defaultLeadFilters(), ...campaign.data.audienceFilter });
-    setExcludeOptOut(campaign.data.excludeOptOut);
     setRecipientLimitInput(
       campaign.data.recipientLimit != null ? String(campaign.data.recipientLimit) : '',
     );
     setTemplateId(campaign.data.templateId ?? '');
     setFollowUpTemplateId(campaign.data.followUpTemplateId ?? '');
+    setFollowUpEnabled(campaign.data.followUpEnabled);
     setFollowUpDelayInput(String(campaign.data.followUpDelayHours ?? CAMPAIGN_FOLLOW_UP_DELAY_HOURS_DEFAULT));
     setRoutingMode(campaign.data.routingMode);
     setWhatsappAccountId(campaign.data.whatsappAccountId ?? '');
@@ -232,6 +234,7 @@ export function CampaignDetailScreen({ id }: { id: string }) {
     recipientLimit: parsedLimit,
     templateId: templateId || null,
     followUpTemplateId: followUpTemplateId || null,
+    followUpEnabled,
     followUpDelayHours,
     routingMode,
     whatsappAccountId: whatsappAccountId || null,
@@ -263,11 +266,11 @@ export function CampaignDetailScreen({ id }: { id: string }) {
       toast.error('Escolha um template.');
       return;
     }
-    if (!followUpTemplateId) {
+    if (followUpEnabled && !followUpTemplateId) {
       toast.error('Escolha o template de retorno.');
       return;
     }
-    if (followUpTemplateId === templateId) {
+    if (followUpEnabled && followUpTemplateId === templateId) {
       toast.error('O retorno precisa de um template diferente da primeira mensagem.');
       return;
     }
@@ -286,14 +289,14 @@ export function CampaignDetailScreen({ id }: { id: string }) {
       return;
     }
     const runStart = () => {
-      mutations.start.mutate(undefined, {
+      mutations.start.mutate({ confirmUnconsented }, {
         onSuccess: () => toast.success('Campanha iniciada.'),
         onError: (error) => toast.error(errorMessage(error)),
       });
     };
     mutations.patch.mutate(draftBody(), {
       onSuccess: runStart,
-      onError: runStart,
+      onError: (error) => toast.error(errorMessage(error)),
     });
   };
 
@@ -361,7 +364,7 @@ export function CampaignDetailScreen({ id }: { id: string }) {
       return;
     }
     mutations.patch.mutate(
-      { followUpTemplateId, followUpDelayHours },
+      { followUpTemplateId, followUpDelayHours, followUpEnabled: true },
       {
         onSuccess: () =>
           mutations.followUp.mutate(undefined, {
@@ -513,14 +516,9 @@ export function CampaignDetailScreen({ id }: { id: string }) {
                   Usar só os selecionados
                 </Button>
               </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={excludeOptOut}
-                  onChange={(event) => setExcludeOptOut(event.target.checked)}
-                />
-                Excluir opt-out (recomendado)
-              </label>
+              <p className="text-xs text-muted-foreground">
+                Opt-out é sempre excluído. Essa proteção não pode ser desativada.
+              </p>
               {audience.isLoading ? (
                 <TableSkeleton rows={4} widths={['8%', '25%', '20%', '20%', '15%', '12%']} />
               ) : audience.isError ? (
@@ -542,6 +540,9 @@ export function CampaignDetailScreen({ id }: { id: string }) {
                     </PropertyRow>
                     <PropertyRow label="Opt-out" numeric>
                       {audience.data.optOut}
+                    </PropertyRow>
+                    <PropertyRow label="Sem consentimento" numeric>
+                      {audience.data.unconsented}
                     </PropertyRow>
                     <PropertyRow label="Vão receber" numeric>
                       {willReceive}
@@ -674,13 +675,24 @@ export function CampaignDetailScreen({ id }: { id: string }) {
             </Section>
 
             <Section title="Retorno">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={followUpEnabled}
+                  onChange={(event) => setFollowUpEnabled(event.target.checked)}
+                />
+                Ativar segunda mensagem automática
+              </label>
               <p className="text-xs text-muted-foreground text-pretty">
-                Segunda mensagem, automática, para quem recebeu a primeira e não respondeu. O
-                intervalo conta a partir do envio. Pausar ou cancelar a campanha para parar.
+                Desligada por padrão. Quando ativada, usa a mesma cadência e o mesmo limite diário.
               </p>
-              <div className="flex flex-col gap-2 md:max-w-xl">
+              <div className="flex flex-col gap-2 md:max-w-xl" aria-disabled={!followUpEnabled}>
                 <Label>Template de retorno</Label>
-                <Select value={followUpTemplateId || undefined} onValueChange={setFollowUpTemplateId}>
+                <Select
+                  value={followUpTemplateId || undefined}
+                  onValueChange={setFollowUpTemplateId}
+                  disabled={!followUpEnabled}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Escolha outro template" />
                   </SelectTrigger>
@@ -711,6 +723,7 @@ export function CampaignDetailScreen({ id }: { id: string }) {
                   onChange={(event) => setFollowUpDelayInput(event.target.value)}
                   className="w-24"
                   aria-invalid={followUpDelayInvalid || undefined}
+                  disabled={!followUpEnabled}
                 />
                 <p className="text-xs text-muted-foreground">
                   Padrão {CAMPAIGN_FOLLOW_UP_DELAY_HOURS_DEFAULT}. Inteiro de{' '}
@@ -791,6 +804,17 @@ export function CampaignDetailScreen({ id }: { id: string }) {
             </Section>
 
             <div className="flex flex-col gap-3 border-t border-border pt-4">
+              {audience.data && audience.data.unconsented > 0 ? (
+                <label className="flex items-start gap-2 text-sm text-pretty">
+                  <input
+                    type="checkbox"
+                    checked={confirmUnconsented}
+                    onChange={(event) => setConfirmUnconsented(event.target.checked)}
+                  />
+                  Confirmo o envio para {audience.data.unconsented} contato(s) sem consentimento
+                  registrado e assumo o risco de denúncia ou restrição.
+                </label>
+              ) : null}
               <RedisHint />
               <p className="text-xs text-muted-foreground">
                 Iniciar congela o público no servidor, cria destinatários e enfileira no Redis.
@@ -810,9 +834,10 @@ export function CampaignDetailScreen({ id }: { id: string }) {
                   loading={mutations.start.isPending || mutations.patch.isPending}
                   disabled={
                     !templateId ||
-                    !followUpTemplateId ||
-                    followUpSameTemplate ||
-                    followUpDelayInvalid ||
+                    (followUpEnabled && !followUpTemplateId) ||
+                    (followUpEnabled && followUpSameTemplate) ||
+                    (followUpEnabled && followUpDelayInvalid) ||
+                    Boolean(audience.data?.unconsented && !confirmUnconsented) ||
                     sendableAccounts.length === 0 ||
                     willReceive < 1 ||
                     limitInvalid
@@ -846,6 +871,10 @@ export function CampaignDetailScreen({ id }: { id: string }) {
               );
             })()}
             <PropertyRow label="Conta">{row.whatsappAccountName ?? '—'}</PropertyRow>
+            <PropertyRow label="Proteção">
+              {row.campaignSafetyPauseReason ??
+                `${row.campaignDailyAttempts}/60 tentativas hoje · 3 envios e pausa de 5 min`}
+            </PropertyRow>
             {row.recipientLimit != null ? (
               <PropertyRow label="Quantidade" numeric>
                 {row.recipientLimit}

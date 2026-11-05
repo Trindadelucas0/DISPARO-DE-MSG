@@ -6,6 +6,7 @@ import { leadMatchesImportedPhone, phoneMatchVariants } from '@/lib/whatsapp/con
 import { parsePhone } from '@/lib/validation/phone';
 import type { WhatsappInboundJob } from '@/server/queue/names';
 import { enqueueConversationRouting } from '@/server/queue/enqueue';
+import { isOptOutMessage, recordInboundOptOut } from '@/server/services/opt-out.service';
 
 /**
  * Inbound. Número conhecido liga a conversa ao lead.
@@ -150,6 +151,10 @@ export async function processWhatsappInboundJob(job: WhatsappInboundJob): Promis
       campaignId: conversation.campaignId,
     },
   });
+
+  if (lead && isOptOutMessage(body)) {
+    await recordInboundOptOut(lead.id, phone);
+  }
 
   if (conversation.campaignId && lead) {
     await prisma.campaignRecipient.updateMany({

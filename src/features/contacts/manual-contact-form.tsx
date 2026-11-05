@@ -11,6 +11,7 @@ export type ManualContactValues = {
   name: string;
   whatsapp: string;
   cnpj: string;
+  whatsappConsent: boolean;
 };
 
 export function ManualContactForm({
@@ -31,6 +32,7 @@ export function ManualContactForm({
   const [name, setName] = React.useState('');
   const [whatsapp, setWhatsapp] = React.useState(defaultWhatsapp);
   const [cnpj, setCnpj] = React.useState('');
+  const [whatsappConsent, setWhatsappConsent] = React.useState(false);
 
   React.useEffect(() => {
     setWhatsapp(defaultWhatsapp);
@@ -46,7 +48,12 @@ export function ManualContactForm({
       onSubmit={(event) => {
         event.preventDefault();
         if (!canSubmit || pending) return;
-        onSubmit({ name: name.trim(), whatsapp: whatsapp.trim(), cnpj: cnpj.trim() });
+        onSubmit({
+          name: name.trim(),
+          whatsapp: whatsapp.trim(),
+          cnpj: cnpj.trim(),
+          whatsappConsent,
+        });
       }}
     >
       <div className="flex min-w-0 flex-col gap-1">
@@ -59,6 +66,14 @@ export function ManualContactForm({
           className={layout === 'row' ? 'w-48' : 'w-full'}
         />
       </div>
+      <label className="flex items-center gap-2 pb-1 text-sm">
+        <input
+          type="checkbox"
+          checked={whatsappConsent}
+          onChange={(event) => setWhatsappConsent(event.target.checked)}
+        />
+        Autorizou contato pelo WhatsApp
+      </label>
       <div className="flex min-w-0 flex-col gap-1">
         <Label htmlFor={`${idPrefix}-whatsapp`}>WhatsApp</Label>
         <Input

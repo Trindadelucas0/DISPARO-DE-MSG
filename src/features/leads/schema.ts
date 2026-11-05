@@ -173,6 +173,7 @@ export const leadUpdateSchema = z
     nomeFantasia: optionalText(255),
     telefone: optionalText(32),
     whatsapp: optionalText(32),
+    whatsappConsent: z.boolean().optional(),
     email: z.preprocess(
       (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
       z.string().trim().toLowerCase().email('E-mail inválido.').max(180).nullable().optional(),
@@ -211,6 +212,7 @@ export const manualLeadSchema = z.object({
   name: z.string().trim().min(2).max(80),
   whatsapp: z.string().trim().max(32).optional(),
   cnpj: z.string().trim().max(18).optional(),
+  whatsappConsent: z.boolean().optional(),
 });
 
 export type ManualLeadInput = z.infer<typeof manualLeadSchema>;

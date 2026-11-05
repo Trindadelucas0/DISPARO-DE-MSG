@@ -61,6 +61,9 @@ function serialize(
     })(),
     activeCampaigns: extras.activeCampaigns,
     queued: extras.queued,
+    campaignDailyAttempts: row.campaignDailyAttempts,
+    campaignSafetyPausedAt: row.campaignSafetyPausedAt?.toISOString() ?? null,
+    campaignSafetyPauseReason: row.campaignSafetyPauseReason,
     createdAt: row.createdAt.toISOString(),
   };
 }

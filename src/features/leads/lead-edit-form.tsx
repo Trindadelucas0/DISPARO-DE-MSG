@@ -58,6 +58,7 @@ function toFormValues(lead: SerializedLeadDetail): LeadUpdateInput {
     porte: lead.porte ?? '',
     origem: lead.origem ?? '',
     observacoes: lead.observacoes ?? '',
+    whatsappConsent: Boolean(lead.whatsappConsentAt),
   } as LeadUpdateInput;
 }
 
@@ -158,6 +159,11 @@ export function LeadEditForm({
               </span>
             ) : null}
           </div>
+
+          <label className="col-span-2 flex items-center gap-2 text-sm">
+            <input type="checkbox" {...register('whatsappConsent')} />
+            Contato autorizou mensagens pelo WhatsApp
+          </label>
         </div>
 
         {role === 'USER' ? (

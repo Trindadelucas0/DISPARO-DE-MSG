@@ -17,6 +17,7 @@ export type CampaignPatchBody = {
   routingMode?: string;
   templateId?: string | null;
   followUpTemplateId?: string | null;
+  followUpEnabled?: boolean;
   followUpDelayHours?: number;
   whatsappAccountId?: string | null;
 };
@@ -84,6 +85,7 @@ export function useCampaignAudience(filters: LeadFilters, excludeOptOut: boolean
         withWhatsapp: number;
         withoutWhatsapp: number;
         optOut: number;
+        unconsented: number;
         sample: {
           id: string;
           razaoSocial: string;
@@ -126,7 +128,8 @@ export function useCampaignMutations(id?: string) {
       onSuccess: invalidate,
     }),
     start: useMutation({
-      mutationFn: () => apiPost<SerializedCampaign>(`/api/campaigns/${id}/start`),
+      mutationFn: (body: { confirmUnconsented?: boolean } = {}) =>
+        apiPost<SerializedCampaign>(`/api/campaigns/${id}/start`, body),
       onSettled: invalidate,
     }),
     pause: useMutation({

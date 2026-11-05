@@ -220,8 +220,27 @@ export async function patchLead(
       tracked.responsavelId = value;
       continue;
     }
+    if (key === 'whatsappConsent') {
+      const consent = Boolean(value);
+      data.whatsappConsentAt = consent ? new Date() : null;
+      data.whatsappConsentSource = consent ? 'MANUAL' : null;
+      tracked.whatsappConsentAt = data.whatsappConsentAt;
+      tracked.whatsappConsentSource = data.whatsappConsentSource;
+      continue;
+    }
     (data as Record<string, unknown>)[key] = value;
     tracked[key] = value;
+  }
+
+  if (
+    input.whatsapp !== undefined &&
+    input.whatsapp !== current.whatsapp &&
+    input.whatsappConsent === undefined
+  ) {
+    data.whatsappConsentAt = null;
+    data.whatsappConsentSource = null;
+    tracked.whatsappConsentAt = null;
+    tracked.whatsappConsentSource = null;
   }
 
   const changes = diffChanges(current as unknown as Record<string, unknown>, tracked);
@@ -480,6 +499,14 @@ function serializeManualLead(
   return { id: lead.id, cnpj: lead.cnpj, razaoSocial: lead.razaoSocial, created };
 }
 
+async function applyManualConsent(leadId: string, consent: boolean | undefined) {
+  if (!consent) return;
+  await updateLead(leadId, {
+    whatsappConsentAt: new Date(),
+    whatsappConsentSource: 'MANUAL',
+  });
+}
+
 export async function createManualLead(
   user: SessionUser,
   input: ManualLeadInput,
@@ -513,6 +540,7 @@ export async function createManualLead(
         throw new ForbiddenError('Este CNPJ já está em um lead fora do seu escopo.');
       }
       await fillMissingManualPhones(byCnpj, phoneDigits);
+      await applyManualConsent(byCnpj.id, input.whatsappConsent);
       return serializeManualLead(byCnpj, false);
     }
   }
@@ -524,6 +552,7 @@ export async function createManualLead(
         throw new ForbiddenError('Este número já está em um lead de outro vendedor.');
       }
       await fillMissingManualPhones(byPhone, phoneDigits);
+      await applyManualConsent(byPhone.id, input.whatsappConsent);
       return serializeManualLead(byPhone, false);
     }
   }
@@ -538,6 +567,7 @@ export async function createManualLead(
       throw new ForbiddenError('Este contato já está na base de outro vendedor.');
     }
     await fillMissingManualPhones(existingKey, phoneDigits);
+    await applyManualConsent(existingKey.id, input.whatsappConsent);
     return serializeManualLead(existingKey, false);
   }
 
@@ -554,6 +584,8 @@ export async function createManualLead(
       status,
       responsavelId: options?.responsavelId ?? user.id,
       situacaoCadastral: 'ATIVA',
+      whatsappConsentAt: input.whatsappConsent ? new Date() : null,
+      whatsappConsentSource: input.whatsappConsent ? 'MANUAL' : null,
     });
 
     await recordAudit({
@@ -574,6 +606,7 @@ export async function createManualLead(
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       const again = await findLeadByCnpj(key);
       if (again && canWriteLead(user, again)) {
+        await applyManualConsent(again.id, input.whatsappConsent);
         return serializeManualLead(again, false);
       }
       throw new ForbiddenError('Este contato já está na base.');

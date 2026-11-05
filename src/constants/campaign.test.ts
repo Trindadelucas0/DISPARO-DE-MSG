@@ -15,19 +15,19 @@ import {
 } from '@/constants/campaign';
 
 describe('cadência de campanha', () => {
-  it('é 2 disparos por minuto, 1 a cada 30 s', () => {
-    expect(CAMPAIGN_SENDS_PER_MINUTE).toBe(2);
-    expect(campaignSendIntervalMs()).toBe(30_000);
+  it('é 1 disparo por minuto', () => {
+    expect(CAMPAIGN_SENDS_PER_MINUTE).toBe(1);
+    expect(campaignSendIntervalMs()).toBe(60_000);
   });
 
   it('estima minutos restantes', () => {
     expect(estimateCampaignMinutes(0)).toBe(0);
     expect(estimateCampaignMinutes(-1)).toBe(0);
     expect(estimateCampaignMinutes(1)).toBe(1);
-    expect(estimateCampaignMinutes(4)).toBe(2);
-    expect(estimateCampaignMinutes(5)).toBe(3);
-    expect(estimateCampaignMinutes(100)).toBe(50);
-    expect(estimateCampaignMinutes(1_000)).toBe(500);
+    expect(estimateCampaignMinutes(3)).toBe(3);
+    expect(estimateCampaignMinutes(4)).toBe(9);
+    expect(estimateCampaignMinutes(6)).toBe(11);
+    expect(estimateCampaignMinutes(60)).toBe(155);
   });
 });
 

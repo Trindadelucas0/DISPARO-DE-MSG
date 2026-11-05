@@ -19,6 +19,12 @@ import type { CampaignSendJob } from '@/server/queue/names';
 import { enqueueCampaignSend, enqueueConversationRouting } from '@/server/queue/enqueue';
 import { findOpenConversationForCampaign } from '@/server/repositories/conversation.repository';
 import { markLeadContactedOnOutbound } from '@/server/services/lead-funnel';
+import {
+  recordCampaignAttemptFailure,
+  recordCampaignAttemptSuccess,
+  reserveCampaignAttempt,
+} from '@/server/services/campaign-safety.service';
+import { isPhoneOptedOut, withOptOutInstruction } from '@/server/services/opt-out.service';
 
 type RecipientWithCampaign = NonNullable<Awaited<ReturnType<typeof loadRecipient>>>;
 
@@ -72,13 +78,8 @@ async function processInitialSend(
     return 'skipped';
   }
 
-  if (campaign.excludeOptOut) {
-    const opted = await prisma.optOut.findUnique({
-      where: {
-        leadId_phone: { leadId: recipient.leadId, phone: recipient.phone },
-      },
-    });
-    if (opted) {
+  {
+    if (await isPhoneOptedOut(recipient.phone)) {
       await prisma.campaignRecipient.update({
         where: { id: recipient.id },
         data: {
@@ -156,6 +157,7 @@ async function processFollowUpSend(
   recipient: RecipientWithCampaign,
 ): Promise<'sent' | 'skipped'> {
   const campaign = recipient.campaign;
+  if (!campaign.followUpEnabled) return 'skipped';
   if (campaign.status === CampaignStatus.CANCELLED) {
     return 'skipped';
   }
@@ -203,13 +205,8 @@ async function processFollowUpSend(
     return 'skipped';
   }
 
-  if (campaign.excludeOptOut) {
-    const opted = await prisma.optOut.findUnique({
-      where: {
-        leadId_phone: { leadId: recipient.leadId, phone: recipient.phone },
-      },
-    });
-    if (opted) {
+  {
+    if (await isPhoneOptedOut(recipient.phone)) {
       await prisma.campaignRecipient.update({
         where: { id: recipient.id },
         data: {
@@ -308,13 +305,13 @@ async function dispatchCampaignMessage(input: {
   const campaign = recipient.campaign;
   const isFollowUp = wave === 'followup';
 
-  const body = renderTemplate(
+  const body = withOptOutInstruction(renderTemplate(
     templateBody,
     buildLeadTemplateVars(recipient.lead, {
       vendedor: campaign.createdBy.name,
       responsavel: recipient.lead.responsavelId ? undefined : campaign.createdBy.name,
     }),
-  );
+  ));
 
   const media = templateMediaId
     ? await prisma.mediaAsset.findUnique({
@@ -347,6 +344,10 @@ async function dispatchCampaignMessage(input: {
       },
     });
   }
+
+  // Só consome o teto operacional quando todas as validações locais terminaram e o envio
+  // está pronto para ser entregue ao gateway.
+  if (!(await reserveCampaignAttempt(account.id))) return 'skipped';
 
   const pending = await prisma.message.create({
     data: {
@@ -410,6 +411,9 @@ async function dispatchCampaignMessage(input: {
         data: { lastHeartbeatAt: new Date(), sessionStatus: 'CONNECTED', status: 'ACTIVE' },
       }),
     ]);
+    await recordCampaignAttemptSuccess(account.id).catch((safetyError: Error) => {
+      console.error('[campaign] limpar falhas consecutivas:', safetyError.message);
+    });
 
     if (!conversation.assignedUserId) {
       await enqueueConversationRouting({
@@ -433,6 +437,9 @@ async function dispatchCampaignMessage(input: {
 
     return 'sent';
   } catch (error) {
+    await recordCampaignAttemptFailure(account.id, error).catch((safetyError: Error) => {
+      console.error('[campaign] registrar falha de segurança:', safetyError.message);
+    });
     const message =
       error instanceof GatewayNotCapableError
         ? error.message
@@ -463,6 +470,14 @@ async function dispatchCampaignMessage(input: {
 
 async function scheduleAutomaticFollowUp(recipient: RecipientWithCampaign): Promise<void> {
   const campaign = recipient.campaign;
+  if (!campaign.followUpEnabled) return;
+  if (campaign.whatsappAccountId) {
+    const account = await prisma.whatsAppAccount.findUnique({
+      where: { id: campaign.whatsappAccountId },
+      select: { campaignSafetyPausedAt: true },
+    });
+    if (account?.campaignSafetyPausedAt) return;
+  }
   if (!campaign.followUpTemplateId) return;
   if (campaign.followUpTemplateId === campaign.templateId) return;
   if (campaign.status === CampaignStatus.CANCELLED || campaign.status === CampaignStatus.PAUSED) {

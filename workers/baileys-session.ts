@@ -48,6 +48,7 @@ import { prisma } from '@/lib/db';
 import { persistMediaBuffer } from '@/server/services/media.service';
 import { enqueueWhatsappInbound } from '@/server/queue/enqueue';
 import { createBullConnection, getSharedBullConnection } from '@/server/queue/connection';
+import { pauseCampaignsForCriticalSession } from '@/server/services/campaign-safety.service';
 
 type WASocket = {
   ev: {
@@ -487,6 +488,14 @@ async function startSocket(accountId: string) {
           update.lastDisconnect?.error,
           DisconnectReason.restartRequired,
         );
+        await pauseCampaignsForCriticalSession(
+          accountId,
+          new Error(
+            `${code ?? ''} ${update.lastDisconnect?.error?.message ?? 'Sessão encerrada.'}`.trim(),
+          ),
+        ).catch((error: Error) => {
+          console.error('[baileys] pausa de segurança:', accountId, error.message);
+        });
         const authWiped = shouldWipeAuthOnDisconnect(code);
         const shouldReconnect = shouldReconnectAfterDisconnect({
           authWiped,

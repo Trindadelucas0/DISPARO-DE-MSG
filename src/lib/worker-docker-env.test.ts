@@ -39,6 +39,7 @@ describe('rewriteDatabaseUrlForDocker', () => {
 describe('applyDockerWorkerEnv', () => {
   it('não mexe nas variáveis fora do container', () => {
     const env: NodeJS.ProcessEnv = {
+      NODE_ENV: 'test',
       DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/crm',
       REDIS_URL: 'redis://127.0.0.1:6380',
     };
@@ -49,6 +50,7 @@ describe('applyDockerWorkerEnv', () => {
 
   it('no Compose aponta Postgres para o host e Redis para o serviço', () => {
     const env: NodeJS.ProcessEnv = {
+      NODE_ENV: 'test',
       CRM_WORKER_IN_DOCKER: '1',
       DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/crm',
       REDIS_URL: 'redis://127.0.0.1:6380',
@@ -60,6 +62,7 @@ describe('applyDockerWorkerEnv', () => {
 
   it('no Compose com Postgres irmão usa CRM_DOCKER_DB_HOST', () => {
     const env: NodeJS.ProcessEnv = {
+      NODE_ENV: 'test',
       CRM_WORKER_IN_DOCKER: '1',
       CRM_DOCKER_DB_HOST: 'crm-postgres',
       DATABASE_URL: 'postgresql://u:p@127.0.0.1:5432/crm',

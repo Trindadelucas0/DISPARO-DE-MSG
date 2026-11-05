@@ -243,6 +243,8 @@ model Lead {
   whatsapp      String?
   phones        String[]   @default([])
   email         String?
+  whatsappConsentAt     DateTime?
+  whatsappConsentSource String?
 
   // Localização
   estado        String?
@@ -520,6 +522,13 @@ model WhatsAppAccount {
   providerInstanceName  String?
   /// Data URL (base64) do QR enquanto sessionStatus = QR_CODE.
   qrCode                String?                @db.Text
+  campaignSafetyDay                 String?
+  campaignDailyAttempts             Int                    @default(0)
+  campaignBurstAttempts             Int                    @default(0)
+  campaignCooldownUntil             DateTime?
+  campaignConsecutiveFailures       Int                    @default(0)
+  campaignSafetyPausedAt            DateTime?
+  campaignSafetyPauseReason         String?
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
 
@@ -543,6 +552,7 @@ model Campaign {
   routingMode           CampaignRoutingMode  @default(MANUAL)
   templateId            String?
   followUpTemplateId    String?
+  followUpEnabled       Boolean              @default(false)
   followUpDelayHours    Int                  @default(2)
   followUpStartedAt     DateTime?
   whatsappAccountId     String?
@@ -551,6 +561,7 @@ model Campaign {
   withWhatsappCount     Int                  @default(0)
   withoutWhatsappCount  Int                  @default(0)
   optOutCount           Int                  @default(0)
+  unconsentedConfirmedAt DateTime?
   startedAt             DateTime?
   pausedAt              DateTime?
   completedAt           DateTime?

@@ -19,9 +19,9 @@ continua sendo a fonte de regra, campo e path de código. Tutorial para o client
 [`docs/como-usar-o-sistema.md`](docs/como-usar-o-sistema.md)
 (guia visual: wireframe ASCII por tela e passos “clique aqui”; linguagem do dia a dia).
 
-- Versão: 0.16.25 — Agenda em .vcf para transmissão manual
+- Versão: 0.17.0 — Proteção operacional das campanhas
 - Fases entregues: 1 a 9 (MVP) + restyle 0.11.0 + identidade 0.12.0 + atendimento 0.13.0 + retorno 0.14.0
-- Última atualização: 28/10/2026 — exportação da agenda em .vcf, em grupos rotulados mais um todos.vcf de importação única. Antes, 0.16.24 — primeira versão da exportação; 0.16.23 — pausar e cancelar limpam a fila.
+- Última atualização: 05/11/2026 — proteções de cadência, pausa, limite diário, opt-out e retorno opcional; preservada a agenda em VCF.
 
 ---
 
@@ -142,15 +142,19 @@ Filas: `campaign-send`, `campaign-retry`, `whatsapp-inbound`, `whatsapp-status`,
 pode ter `:` (BullMQ recusa). A chave do destinatário é `campaignId-leadId`; `toBullJobId`
 troca `:` restante por `-` (chaves antigas `campaignId:leadId` entram na mesma fila).
 
-Cadência de campanha: **2 disparos por minuto** (`CAMPAIGN_SENDS_PER_MINUTE`), espaçados em
-30 s (`campaignSendIntervalMs`). O teto está no worker (`concurrency: 1` + BullMQ `limiter`
-`max: 1` / 30 s) em `campaign-send` e, por defesa, em `campaign-retry`. Duas campanhas ao
-mesmo tempo **dividem** os 2/min. O **retorno** (segunda mensagem) entra na **mesma** fila —
-não soma 2+2. JobId do retorno: `followup-{campaignId}-{leadId}` (retry de falha ou pausa
-acrescenta `-r{timestamp}`). Depois do primeiro `SENT`, o worker agenda o retorno com
-`delay` BullMQ = `followUpDelayHours` (padrão 2 h). Sem cron. Pausada: o job delayed que
-disparar é ignorado; **Retomar** reagenda com o tempo que ainda falta. Inbox e envio
-avulso no lead **não** entram nesse teto.
+Cadência de campanha: **1 tentativa por minuto** (`CAMPAIGN_SENDS_PER_MINUTE`). Depois da
+terceira tentativa da mesma conta, `campaignCooldownUntil` impõe pausa de 5 minutos. O teto é
+60 tentativas por dia e por conta no fuso `America/Sao_Paulo`; primeira mensagem e retorno
+compartilham contador e fila. O job tem `attempts: 1`: falha não repete em segundos. Três falhas
+consecutivas, código 440/463, `conflict`, restrição ou suspensão pausam todas as campanhas da
+conta e removem jobs pendentes. Retomada é manual; o teto de 60 só permite retomada no dia seguinte.
+`campaign-retry` permanece apenas como nome legado e não tem worker separado. Inbox e envio
+humano avulso no lead ficam fora desses contadores.
+
+Retorno automático nasce **desligado** (`Campaign.followUpEnabled=false`). Ao ser ativado pelo
+gestor, usa outro template, respeita o atraso configurado e todas as mesmas proteções. Todo texto
+de campanha recebe a instrução para responder `SAIR`. `SAIR`, `PARAR`, `CANCELAR`, `REMOVER` e
+`NÃO QUERO RECEBER`, como resposta completa, registram opt-out pelo número e impedem novos envios.
 `enqueueCampaignRetry` existe e não é chamado; se um dia for, o job deve voltar para
 `campaign-send` (não somar 5+5). Worker antigo sem restart continua no ritmo anterior:
 religar o container `crm-worker` (`docker compose restart worker`). O container monta `./src`
@@ -261,6 +265,7 @@ fila de contatos e follow-ups devolvem o par. Filtrar a base em JavaScript conti
 | `20260907180000_campaign_follow_up` | Template, atraso e status de retorno (`followUp*`) na campanha e no destinatário |
 | `20260908120000_campaign_follow_up_delay_default` | Default de `followUpDelayHours` de 3 para 2 (linhas antigas não mudam) |
 | `20260907190000_whatsapp_media` | `MediaAsset`; `MessageTemplate.mediaId`; `Message.mediaId`; `MessageKind` IMAGE/VIDEO/AUDIO |
+| `20261104170000_campaign_safety` | Consentimento do WhatsApp; contadores/pausa por conta; retorno opcional; confirmação de público sem consentimento |
 
 ## 5. Autenticação e autorização
 
@@ -523,10 +528,11 @@ QR **não** abre nesta tela: conectar em `/whatsapp`. Iniciar recusa conta desco
 | Público | Incluir na campanha | Cadastro manual no rascunho | Não | `POST /api/leads` | Grava o contato e coloca o id em `audienceFilter.ids` | `manual-contact-form.tsx` |
 | Quantidade | Enviar para no máximo | Primeiros N elegíveis do rascunho | Não (vazio = todos) | `Campaign.recipientLimit` | Inteiro 1–100000; ordem por `id`. Só o primeiro lote. UI estima `ceil(N/5)` min | `takeRecipientLimit`, `estimateCampaignMinutes` |
 | Próximo lote | Adicionar mais | Novos destinatários na mesma campanha | Não | `POST /api/campaigns/:id/recipients` | Recusa rascunho e cancelada. Exclui `leadId` já materializado (`nextRecipientBatch`). Pausada: cria `PENDING` e espera Retomar. Concluída volta a `RUNNING` | `addCampaignRecipients` |
-| Quantidade | Ritmo | 2 disparos/min | — | constante | Worker, não a API. Inbox fora | `CAMPAIGN_SENDS_PER_MINUTE`, `workers/campaign-worker.ts` |
+| Quantidade | Ritmo | 1 tentativa/min; pausa 5 min a cada 3; teto 60/dia | — | conta WhatsApp | Primeira mensagem e retorno dividem a proteção. Inbox fora | `campaign-safety.service.ts`, `workers/campaign-worker.ts` |
 | Mensagem | Template | Texto da campanha | Sim para iniciar (ou mídia) | `GET /api/templates` | Se o template tem foto/vídeo, o disparo manda essa mídia + legenda (uma mensagem por destinatário) | `campaign.service.ts`, `campaign-send.ts` |
-| Retorno | Template de retorno | Segunda mensagem, outro template | Sim na UI para iniciar | `GET /api/templates` | Distinto do primeiro. Só quem `SENT`/`DELIVERED`, não respondeu, passou `followUpDelayHours` (1–72, padrão 2). Agenda sozinho no `SENT` | `scheduleAutomaticFollowUp`, `campaign-send.ts` |
+| Retorno | Ativar segunda mensagem automática | Segunda mensagem, outro template | Não; desligado por padrão | `Campaign.followUpEnabled` | Quando ligado: distinto do primeiro; só `SENT`/`DELIVERED`, sem resposta, após o intervalo | `scheduleAutomaticFollowUp`, `campaign-send.ts` |
 | Retorno | Esperar (horas) | Espera após a primeira mensagem | Sim (default 2) | `Campaign.followUpDelayHours` | Delayed job BullMQ. **Disparar retorno agora** é catch-up. Pausada: Retomar reagenda | `campaign-detail-screen.tsx` |
+| Público | Sem consentimento | Contatos sem autorização registrada | Confirmação condicional | `Lead.whatsappConsentAt` | API recusa iniciar até o gestor confirmar o aviso; opt-out nunca pode ser desligado | `startCampaign`, `manual-contact-form.tsx` |
 | Distribuição | routingMode | Quem assume resposta | Sim (default Manual) | enum | MANUAL / CURRENT_OWNER / RULES / ROUND_ROBIN | `constants/campaign.ts` |
 | Conta WhatsApp | Conta que envia | Sessão do disparo | Sim para iniciar | `GET /api/whatsapp/accounts` | CONNECTED; sem LEGACY_MANUAL | `isConnectedSendableAccount` |
 
@@ -728,7 +734,7 @@ para ter a base no aparelho e mandar manualmente; não substitui o disparo da ca
 | Rate limit de importação | 5 / 10 min por usuário + IP | `RATE_LIMITS.import` |
 | Rate limit de exportação | 10 / 10 min por usuário + IP | `RATE_LIMITS.export` |
 | Rate limit de início de campanha | 8 / 10 min por usuário | `RATE_LIMITS.campaignStart` (também `POST .../follow-up` e `POST .../recipients`) |
-| Cadência de disparo de campanha | 2 / min (1 a cada 30 s), fila inteira | `CAMPAIGN_SENDS_PER_MINUTE`, `workers/campaign-worker.ts` |
+| Cadência de campanha | 1/min; pausa 5 min a cada 3; 60/dia/conta; 1 tentativa por job | `campaign-safety.service.ts`, `workers/campaign-worker.ts` |
 | Rate limit de webhook | 120 / min por IP | `RATE_LIMITS.webhook` |
 | Rate limit de escrita comum | 60 / min por usuário | `RATE_LIMITS.writeHeavy` (`POST /api/leads`, `POST /api/leads/bulk`, `POST /api/conversations/:id/contact`) |
 | Rate limit de upload de mídia | 20 / 10 min por usuário + IP | `RATE_LIMITS.mediaUpload` (`POST /api/media`) |
@@ -805,8 +811,8 @@ fechar juntos):
    Conectada, **Importar contatos** grava todos os números da conta (agenda + 1:1) como leads
    (não envia mensagem; casa telefone com a planilha). Evolution não
    é o fluxo. MOCK para teste sem enviar. Campanhas → uma tela (público, quantidade, template,
-   retorno 2 h, distribuição, conta CONNECTED) → Iniciar (Redis + worker). Ritmo fixo: 5
-   contatos/min (100 ≈ 20 min). Depois: **Adicionar mais** no mesmo público; retorno sai sozinho.
+   retorno opcional, distribuição, conta CONNECTED) → confirmar aviso de consentimento quando
+   houver → Iniciar. Ritmo: 1/min, pausa de 5 min a cada 3 e teto de 60/dia/conta.
 3. **Vendedor.** Só **Kanban** e **Inbox**. No Kanban só os cards atribuídos a ele **e já contatados**
    (Novo/Pronto não entram). Quando o gestor transfere a conversa, o lead passa a ser dele;
    o card entra no Kanban depois do contato. Arrasta o funil; responde na conversa. Não vê telefone,
@@ -877,6 +883,13 @@ Religar / atualizar: runbook em [`README.md`](README.md) (`git pull`, `migrate d
 `docker compose up -d` antigo não subir o compose Windows.
 
 HTTPS (Let's Encrypt) **não** está neste ambiente. Senha root e `.env` não entram neste arquivo.
+
+Resultado na entrega 0.17.0 — **Proteção operacional das campanhas**: envio em 1 tentativa por
+minuto, pausa de 5 minutos depois de cada 3, teto de 60 por dia/conta, sem retry rápido e pausa
+automática por falhas ou sinais 440/463/`conflict`. Opt-out passa a ser obrigatório e global por
+número; comandos recebidos na Inbox bloqueiam novos envios. Consentimento pode ser registrado no
+contato; sem ele, iniciar exige confirmação auditável. Retorno automático fica desligado por padrão.
+Vídeo MP4 de até 16 MB continua no template e ganhou teste explícito de legenda.
 
 Resultado na entrega 0.16.25 — **Importação única da agenda**: a exportação passou a gravar também
 um `todos.vcf` com a agenda inteira na mesma ordem dos grupos, porque importar 39 arquivos um a um

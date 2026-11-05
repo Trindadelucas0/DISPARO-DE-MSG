@@ -62,6 +62,8 @@ export const LEAD_DETAIL_SELECT = {
   optanteSimples: true,
   optanteMei: true,
   updatedAt: true,
+  whatsappConsentAt: true,
+  whatsappConsentSource: true,
 } satisfies Prisma.LeadSelect;
 
 export type LeadDetailRow = Prisma.LeadGetPayload<{ select: typeof LEAD_DETAIL_SELECT }> &
@@ -554,6 +556,8 @@ export async function createLead(data: {
   status?: LeadStatus;
   responsavelId?: string | null;
   situacaoCadastral?: string | null;
+  whatsappConsentAt?: Date | null;
+  whatsappConsentSource?: string | null;
 }) {
   return prisma.lead.create({
     data: {
@@ -567,6 +571,8 @@ export async function createLead(data: {
       status: data.status ?? 'NEW',
       responsavelId: data.responsavelId ?? null,
       situacaoCadastral: data.situacaoCadastral ?? null,
+      whatsappConsentAt: data.whatsappConsentAt ?? null,
+      whatsappConsentSource: data.whatsappConsentSource ?? null,
     },
     select: { id: true, cnpj: true, razaoSocial: true, whatsapp: true, telefone: true, responsavelId: true },
   });

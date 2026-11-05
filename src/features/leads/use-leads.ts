@@ -86,7 +86,7 @@ export function useBulkTagLeads() {
 export function useCreateManualLead() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; whatsapp?: string; cnpj?: string }) =>
+    mutationFn: (input: { name: string; whatsapp?: string; cnpj?: string; whatsappConsent?: boolean }) =>
       apiPost<{ id: string; cnpj: string; razaoSocial: string; created: boolean }>(
         '/api/leads',
         input,

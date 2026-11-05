@@ -18,6 +18,15 @@ describe('buildWhatsAppSendContent', () => {
     ).toEqual({ image: buf, caption: 'veja' });
   });
 
+  it('usa o texto como legenda do vídeo', () => {
+    expect(
+      buildWhatsAppSendContent({
+        body: 'apresentação',
+        media: { kind: 'VIDEO', buffer: buf, mimeType: 'video/mp4' },
+      }),
+    ).toEqual({ video: buf, caption: 'apresentação' });
+  });
+
   it('áudio webm não vira nota de voz', () => {
     const content = buildWhatsAppSendContent({
       body: '',
